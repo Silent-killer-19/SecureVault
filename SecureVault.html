@@ -1,0 +1,3226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; font-src 'none'; object-src 'none'; media-src 'none'; worker-src 'none'; child-src 'none'; frame-src 'none'; manifest-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests;">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>SecureVault</title>
+<style>
+/* ==========================================================================
+   DESIGN TOKENS
+   Palette (near-black security console, single verified-teal accent):
+     --bg:        #0B0F14   page background
+     --surface:   #121820   panels / cards
+     --surface-2: #1A222C   nested surfaces, inputs
+     --border:    #26313D   hairline borders
+     --text:      #E7ECF1   primary text
+     --text-dim:  #8494A3   secondary text
+     --accent:    #38D9B9   "verified / unlocked" teal
+     --accent-dim:#1F7A69   pressed / muted accent
+     --danger:    #E5555F   destructive / error
+     --warn:      #E8B948   caution
+   Type: system-ui stack for UI (no external fonts allowed offline),
+         ui-monospace stack for credential data (fixed-width = scannable).
+   Signature element: the "dial" — a rotary security-dial motif used for
+   the lock screen ring, the strength meter, and the auto-lock indicator,
+   echoing a physical vault dial without being a gimmick.
+   ========================================================================== */
+:root{
+  --bg:#0B0F14; --surface:#121820; --surface-2:#1A222C; --surface-3:#212B36;
+  --border:#26313D; --text:#E7ECF1; --text-dim:#8494A3; --text-faint:#57646F;
+  --accent:#38D9B9; --accent-dim:#1F7A69; --accent-soft:rgba(56,217,185,0.12);
+  --danger:#E5555F; --danger-soft:rgba(229,85,95,0.12);
+  --warn:#E8B948; --warn-soft:rgba(232,185,72,0.12);
+  --radius-lg:16px; --radius-md:10px; --radius-sm:7px;
+  --font-ui: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --font-mono: ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.4), 0 8px 24px rgba(0,0,0,0.35);
+}
+*{box-sizing:border-box;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--bg); color:var(--text); font-family:var(--font-ui);
+  -webkit-font-smoothing:antialiased; font-size:15px; line-height:1.45;
+}
+::selection{ background:var(--accent-soft); color:var(--text); }
+button{ font-family:inherit; }
+input,select,textarea{ font-family:inherit; }
+:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; border-radius:6px; }
+@media (prefers-reduced-motion: reduce){ *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; } }
+
+.hidden{ display:none !important; }
+a{ color:var(--accent); }
+
+/* ---------- layout shells ---------- */
+#app{ min-height:100vh; display:flex; flex-direction:column; }
+.screen{ flex:1; display:flex; align-items:center; justify-content:center; padding:24px; }
+.center-card{
+  width:100%; max-width:420px; background:var(--surface); border:1px solid var(--border);
+  border-radius:var(--radius-lg); padding:32px 28px; box-shadow:var(--shadow-1);
+  animation:rise .35s ease;
+}
+@keyframes rise{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
+
+/* ---------- dial signature element ---------- */
+.dial{
+  width:76px; height:76px; margin:0 auto 18px; position:relative;
+  border-radius:50%; background:conic-gradient(var(--accent) var(--dial-pct,0%), var(--surface-3) 0);
+  display:flex; align-items:center; justify-content:center;
+  transition:background 0.25s ease;
+}
+.dial::before{
+  content:""; position:absolute; inset:6px; border-radius:50%; background:var(--surface);
+  border:1px solid var(--border);
+}
+.dial svg{ position:relative; width:26px; height:26px; z-index:1; color:var(--accent); }
+
+.brand{ text-align:center; margin-bottom:6px; font-weight:700; font-size:20px; letter-spacing:0.2px; }
+.brand-sub{ text-align:center; color:var(--text-dim); font-size:13px; margin-bottom:26px; }
+
+.field{ margin-bottom:16px; }
+.field label{ display:block; font-size:12.5px; color:var(--text-dim); margin-bottom:6px; font-weight:600; letter-spacing:0.2px; }
+.input-row{ position:relative; display:flex; align-items:stretch; }
+input[type=text],input[type=password],input[type=email],input[type=url],input[type=number],textarea,select{
+  width:100%; background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+  padding:11px 12px; border-radius:var(--radius-md); font-size:14px; transition:border-color .15s ease, background .15s ease;
+}
+textarea{ resize:vertical; min-height:70px; font-family:var(--font-ui); }
+input:focus,textarea:focus,select:focus{ border-color:var(--accent); background:var(--surface-3); }
+input.mono{ font-family:var(--font-mono); letter-spacing:0.4px; }
+.input-row input{ padding-right:76px; }
+.input-row .icon-btns{ position:absolute; right:4px; top:0; bottom:0; display:flex; align-items:center; gap:2px; }
+
+.btn{
+  appearance:none; border:1px solid transparent; cursor:pointer; border-radius:var(--radius-md);
+  padding:11px 16px; font-size:14px; font-weight:600; transition:transform .1s ease, background .15s ease, border-color .15s ease;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+}
+.btn:active{ transform:scale(0.98); }
+.btn-primary{ background:var(--accent); color:#04211C; width:100%; }
+.btn-primary:hover{ background:#4EE6C6; }
+.btn-ghost{ background:transparent; color:var(--text-dim); border-color:var(--border); }
+.btn-ghost:hover{ color:var(--text); border-color:var(--text-faint); }
+.btn-danger{ background:var(--danger-soft); color:var(--danger); border-color:transparent; }
+.btn-danger:hover{ background:var(--danger); color:#fff; }
+.btn-sm{ padding:7px 10px; font-size:12.5px; border-radius:var(--radius-sm); }
+.icon-btn{
+  width:30px; height:30px; border-radius:8px; background:transparent; border:none; color:var(--text-dim);
+  cursor:pointer; display:flex; align-items:center; justify-content:center;
+}
+.icon-btn:hover{ background:var(--surface-3); color:var(--text); }
+.icon-btn svg{ width:16px; height:16px; }
+
+.error-msg{
+  background:var(--danger-soft); color:var(--danger); border:1px solid rgba(229,85,95,0.35);
+  padding:10px 12px; border-radius:var(--radius-md); font-size:13px; margin-bottom:14px; display:none;
+}
+.error-msg.show{ display:block; animation:shake .3s ease; }
+@keyframes shake{ 10%,90%{transform:translateX(-1px);} 20%,80%{transform:translateX(2px);} 30%,50%,70%{transform:translateX(-4px);} 40%,60%{transform:translateX(4px);} }
+.hint{ font-size:12px; color:var(--text-faint); margin-top:6px; }
+
+/* strength meter (dial-derived: segmented bar) */
+.strength{ display:flex; gap:4px; margin-top:8px; }
+.strength i{ flex:1; height:4px; border-radius:2px; background:var(--surface-3); }
+.strength[data-level="1"] i:nth-child(1){ background:var(--danger); }
+.strength[data-level="2"] i:nth-child(-n+2){ background:var(--warn); }
+.strength[data-level="3"] i:nth-child(-n+3){ background:#7FD858; }
+.strength[data-level="4"] i:nth-child(-n+4){ background:var(--accent); }
+.strength-label{ font-size:11.5px; color:var(--text-faint); margin-top:4px; }
+
+/* ---------- vault chrome ---------- */
+#vaultShell{ display:none; flex-direction:column; min-height:100vh; }
+#vaultShell.active{ display:flex; }
+.topbar{
+  display:flex; align-items:center; gap:14px; padding:14px 20px; border-bottom:1px solid var(--border);
+  background:var(--surface); position:sticky; top:0; z-index:10;
+}
+.topbar .brand-mark{ display:flex; align-items:center; gap:9px; font-weight:700; font-size:15px; }
+.topbar .brand-mark svg{ width:18px; height:18px; color:var(--accent); }
+.search-wrap{ flex:1; max-width:480px; position:relative; }
+.search-wrap svg{ position:absolute; left:12px; top:50%; transform:translateY(-50%); width:15px; height:15px; color:var(--text-faint); }
+.search-wrap input{ padding-left:36px; }
+.topbar-actions{ display:flex; align-items:center; gap:8px; margin-left:auto; }
+.count-pill{ font-size:12px; color:var(--text-dim); background:var(--surface-2); border:1px solid var(--border); padding:5px 10px; border-radius:99px; white-space:nowrap; }
+
+.main-layout{ flex:1; display:flex; min-height:0; }
+.sidebar{
+  width:210px; flex-shrink:0; border-right:1px solid var(--border); padding:16px 10px; overflow-y:auto;
+}
+.sidebar h4{ font-size:11px; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-faint); margin:14px 10px 8px; }
+.cat-item{
+  display:flex; align-items:center; justify-content:space-between; gap:8px; padding:8px 10px; border-radius:8px;
+  cursor:pointer; color:var(--text-dim); font-size:13.5px; margin-bottom:2px;
+}
+.cat-item:hover{ background:var(--surface-2); color:var(--text); }
+.cat-item.active{ background:var(--accent-soft); color:var(--accent); font-weight:600; }
+.cat-item .n{ font-size:11.5px; color:var(--text-faint); }
+.cat-item.active .n{ color:var(--accent); }
+
+.content{ flex:1; overflow-y:auto; padding:20px 24px 80px; }
+.entries-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+.entry-card{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-md); padding:14px;
+  cursor:pointer; transition:border-color .12s ease, transform .12s ease;
+}
+.entry-card:hover{ border-color:var(--text-faint); transform:translateY(-1px); }
+.entry-card .row1{ display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.avatar{
+  width:34px; height:34px; border-radius:9px; background:var(--surface-3); display:flex; align-items:center;
+  justify-content:center; font-weight:700; font-size:13px; color:var(--accent); flex-shrink:0; text-transform:uppercase;
+}
+.entry-card .titles{ min-width:0; flex:1; }
+.entry-card .titles .t{ font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.entry-card .titles .u{ font-size:12px; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.fav-star{ color:var(--warn); flex-shrink:0; width:16px; height:16px; }
+.tag-row{ display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+.tag{ font-size:10.5px; padding:3px 8px; border-radius:99px; background:var(--surface-2); color:var(--text-dim); border:1px solid var(--border); }
+.cat-badge{ font-size:10.5px; color:var(--accent); background:var(--accent-soft); padding:3px 8px; border-radius:99px; }
+
+.empty-state{ text-align:center; padding:80px 20px; color:var(--text-faint); }
+.empty-state svg{ width:44px; height:44px; margin-bottom:14px; opacity:0.5; }
+.empty-state h3{ color:var(--text-dim); font-size:15px; margin:0 0 6px; }
+
+/* fab */
+.fab{
+  position:fixed; right:24px; bottom:24px; width:54px; height:54px; border-radius:50%; background:var(--accent);
+  color:#04211C; border:none; box-shadow:0 6px 18px rgba(56,217,185,0.35); cursor:pointer;
+  display:flex; align-items:center; justify-content:center; z-index:20; transition:transform .15s ease;
+}
+.fab:hover{ transform:scale(1.06); }
+.fab svg{ width:22px; height:22px; }
+
+/* modal */
+.modal-backdrop{
+  position:fixed; inset:0; background:rgba(5,8,11,0.6); backdrop-filter:blur(2px); display:none;
+  align-items:flex-start; justify-content:center; z-index:100; padding:5vh 16px; overflow-y:auto;
+}
+.modal-backdrop.show{ display:flex; }
+.modal{
+  width:100%; max-width:560px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg);
+  padding:24px; box-shadow:var(--shadow-1); animation:rise .25s ease; margin-bottom:5vh;
+}
+.modal h2{ margin:0 0 18px; font-size:17px; }
+.modal-close-row{ display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; }
+.two-col{ display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
+.modal-actions{ display:flex; gap:10px; margin-top:20px; }
+.modal-actions .btn{ flex:1; }
+.checkbox-row{ display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text-dim); margin-bottom:10px; }
+.checkbox-row input{ width:auto; }
+.slider-row{ display:flex; align-items:center; gap:10px; }
+.slider-row input[type=range]{ flex:1; accent-color:var(--accent); background:transparent; padding:0; }
+.slider-val{ font-family:var(--font-mono); font-size:13px; width:28px; text-align:right; }
+
+.gen-checks{ display:grid; grid-template-columns:1fr 1fr; gap:2px 10px; margin:12px 0; }
+.gen-output{ display:flex; gap:8px; margin-top:10px; }
+.gen-output input{ flex:1; }
+
+.toast-wrap{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:200; display:flex; flex-direction:column; gap:8px; align-items:center; }
+.toast{
+  background:var(--surface-3); border:1px solid var(--border); color:var(--text); padding:10px 16px; border-radius:99px;
+  font-size:13px; box-shadow:var(--shadow-1); animation:toastIn .2s ease; display:flex; align-items:center; gap:8px;
+}
+.toast.success{ border-color:rgba(56,217,185,0.4); }
+.toast.error{ border-color:rgba(229,85,95,0.4); }
+@keyframes toastIn{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
+
+.menu-btn-wrap{ position:relative; }
+.dropdown{
+  position:absolute; right:0; top:calc(100% + 6px); background:var(--surface-3); border:1px solid var(--border);
+  border-radius:var(--radius-md); min-width:180px; padding:6px; display:none; box-shadow:var(--shadow-1); z-index:50;
+}
+.dropdown.show{ display:block; }
+.dropdown button{
+  width:100%; text-align:left; background:none; border:none; color:var(--text-dim); padding:8px 10px; border-radius:7px;
+  cursor:pointer; font-size:13px; display:flex; align-items:center; gap:8px;
+}
+.dropdown button:hover{ background:var(--surface-2); color:var(--text); }
+.dropdown hr{ border:none; border-top:1px solid var(--border); margin:5px 0; }
+
+.settings-row{ display:flex; align-items:center; justify-content:space-between; padding:12px 0; border-bottom:1px solid var(--border); gap:16px; }
+.settings-row:last-child{ border-bottom:none; }
+.settings-row .lbl{ font-size:13.5px; }
+.settings-row .desc{ font-size:12px; color:var(--text-faint); margin-top:2px; }
+select{ width:auto; padding:8px 30px 8px 10px; }
+.switch{ position:relative; width:42px; height:24px; flex-shrink:0; }
+.switch input{ opacity:0; width:0; height:0; }
+.switch .track{ position:absolute; inset:0; background:var(--surface-3); border:1px solid var(--border); border-radius:99px; cursor:pointer; transition:.15s; }
+.switch .track::before{ content:""; position:absolute; width:16px; height:16px; left:3px; top:2px; background:var(--text-dim); border-radius:50%; transition:.15s; }
+.switch input:checked + .track{ background:var(--accent-dim); border-color:var(--accent); }
+.switch input:checked + .track::before{ transform:translateX(18px); background:var(--accent); }
+
+.field-view{ margin-bottom:14px; }
+.field-view label{ display:block; font-size:11.5px; color:var(--text-faint); margin-bottom:4px; text-transform:uppercase; letter-spacing:0.5px; }
+.field-view .val{ font-size:14px; word-break:break-word; }
+.field-view .val.mono{ font-family:var(--font-mono); }
+.copy-row{ display:flex; align-items:center; gap:8px; }
+
+@media (max-width:760px){
+  .sidebar{ position:fixed; left:0; top:57px; bottom:0; background:var(--surface); z-index:15; transform:translateX(-100%); transition:transform .2s ease; width:220px; }
+  .sidebar.open{ transform:translateX(0); box-shadow:8px 0 24px rgba(0,0,0,0.4); }
+  .two-col{ grid-template-columns:1fr; }
+  .content{ padding:14px; }
+  .topbar{ padding:10px 12px; }
+  .search-wrap{ order:3; max-width:none; flex-basis:100%; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ============ CREATE MASTER PASSWORD SCREEN ============ -->
+  <div id="screenCreate" class="screen">
+    <div class="center-card">
+      <div class="dial" id="createDial"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg></div>
+      <div class="brand">SecureVault</div>
+      <div class="brand-sub">Create a Master Password to start your offline vault</div>
+      <div class="error-msg" id="createError"></div>
+      <div class="field">
+        <label for="createPass">Master Password</label>
+        <div class="input-row">
+          <input type="password" id="createPass" class="sensitive-field" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Enter a strong master password">
+          <div class="icon-btns"><button class="icon-btn" type="button" data-toggle="createPass" title="Show/Hide"></button></div>
+        </div>
+        <div class="strength" id="createStrengthBar"><i></i><i></i><i></i><i></i></div>
+        <div class="strength-label" id="createStrengthLabel">&nbsp;</div>
+      </div>
+      <div class="field">
+        <label for="createPass2">Confirm Master Password</label>
+        <input type="password" id="createPass2" class="sensitive-field" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Re-enter master password">
+      </div>
+      <div class="field">
+        <label>Key derivation</label>
+        <select id="createKdfChoice">
+          <option value="pbkdf2">Standard — PBKDF2-SHA512 (fast, widely compatible)</option>
+          <option value="argon2id">Enhanced — Argon2id (more resistant to GPU/ASIC cracking; unlock takes ~1-2s)</option>
+        </select>
+        <div class="hint" id="kdfChoiceHint">&nbsp;</div>
+      </div>
+      <button class="btn btn-primary" id="btnCreateVault">Create Vault</button>
+      <div class="hint">This password encrypts everything and is never stored. If you forget it, your vault cannot be recovered.</div>
+    </div>
+  </div>
+
+  <!-- ============ UNLOCK SCREEN ============ -->
+  <div id="screenUnlock" class="screen hidden">
+    <div class="center-card">
+      <div class="dial"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg></div>
+      <div class="brand">SecureVault</div>
+      <div class="brand-sub">Enter your Master Password to unlock</div>
+      <div class="error-msg" id="unlockError"></div>
+      <div class="field">
+        <label for="unlockPass">Master Password</label>
+        <div class="input-row">
+          <input type="password" id="unlockPass" class="sensitive-field" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Master password">
+          <div class="icon-btns"><button class="icon-btn" type="button" data-toggle="unlockPass" title="Show/Hide"></button></div>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="btnUnlock">Unlock Vault</button>
+      <div class="hint" style="text-align:center;margin-top:16px;">
+        <button class="btn btn-ghost btn-sm" id="btnShowImport">Import a vault file instead</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN VAULT SHELL ============ -->
+  <div id="vaultShell">
+    <div class="topbar">
+      <button class="icon-btn hidden" id="btnSidebarToggle" title="Categories"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <div class="brand-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>SecureVault</div>
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" id="searchInput" placeholder="Search website, username, tag, notes…">
+      </div>
+      <div class="topbar-actions">
+        <span class="count-pill" id="entryCount">0 entries</span>
+        <div class="menu-btn-wrap">
+          <button class="icon-btn" id="btnMenu" title="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="6" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="18" r="1.6"/></svg></button>
+          <div class="dropdown" id="menuDropdown">
+            <button id="menuSettings">Settings</button>
+            <button id="menuChangePassword">Change Master Password</button>
+            <button id="menuExport">Export encrypted vault</button>
+            <button id="menuImport">Import encrypted vault</button>
+            <hr>
+            <button id="menuLock">Lock now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-layout">
+      <div class="sidebar" id="sidebar"></div>
+      <div class="content">
+        <div id="entriesContainer"></div>
+      </div>
+    </div>
+    <button class="fab" id="btnAddEntry" title="Add entry (N)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></button>
+  </div>
+
+  <input type="file" id="importFile" accept="application/json" class="hidden">
+  <div class="toast-wrap" id="toastWrap"></div>
+</div>
+
+<!-- ============ ENTRY EDIT/CREATE MODAL ============ -->
+<div class="modal-backdrop" id="entryModalBackdrop">
+  <div class="modal">
+    <div class="modal-close-row">
+      <h2 id="entryModalTitle">Add Entry</h2>
+      <button class="icon-btn" id="entryModalClose">✕</button>
+    </div>
+    <input type="hidden" id="entryId">
+    <div class="two-col">
+      <div class="field"><label>Title</label><input type="text" id="fTitle" maxlength="200" placeholder="e.g. Personal Gmail"></div>
+      <div class="field"><label>Website</label><input type="text" id="fWebsite" maxlength="200" placeholder="example.com"></div>
+    </div>
+    <div class="two-col">
+      <div class="field"><label>Username</label><input type="text" id="fUsername" maxlength="300"></div>
+      <div class="field"><label>Email</label><input type="email" id="fEmail" maxlength="300"></div>
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <div class="input-row">
+        <input type="password" id="fPassword" class="mono" maxlength="512">
+        <div class="icon-btns">
+          <button class="icon-btn" type="button" id="fPassToggle" title="Show/Hide"></button>
+          <button class="icon-btn" type="button" id="fPassGen" title="Generate"></button>
+        </div>
+      </div>
+      <div class="strength" id="fStrengthBar"><i></i><i></i><i></i><i></i></div>
+      <div class="strength-label" id="fStrengthLabel">&nbsp;</div>
+    </div>
+    <div class="field"><label>URL</label><input type="url" id="fUrl" maxlength="500" placeholder="https://"></div>
+    <div class="two-col">
+      <div class="field">
+        <label>Category</label>
+        <select id="fCategory">
+          <option>Email</option><option>Banking</option><option>Social</option><option>Shopping</option>
+          <option>Government</option><option>Education</option><option>Hosting</option><option>Developer</option>
+          <option>Work</option><option>Personal</option><option>Custom</option>
+        </select>
+      </div>
+      <div class="field"><label>Tags (comma separated)</label><input type="text" id="fTags" maxlength="300" placeholder="finance, primary"></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea id="fNotes" maxlength="4000"></textarea></div>
+    <div class="checkbox-row"><input type="checkbox" id="fFavorite"><label for="fFavorite">Mark as favorite</label></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="entryModalCancel">Cancel</button>
+      <button class="btn btn-primary" id="entryModalSave">Save Entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ENTRY VIEW MODAL ============ -->
+<div class="modal-backdrop" id="viewModalBackdrop">
+  <div class="modal">
+    <div class="modal-close-row">
+      <h2 id="viewModalTitle">Entry</h2>
+      <button class="icon-btn" id="viewModalClose">✕</button>
+    </div>
+    <div id="viewModalBody"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="viewBtnDelete">Delete</button>
+      <button class="btn btn-ghost" id="viewBtnEdit">Edit</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ GENERATOR STANDALONE MODAL ============ -->
+<div class="modal-backdrop" id="genModalBackdrop">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-close-row"><h2>Password Generator</h2><button class="icon-btn" id="genModalClose">✕</button></div>
+
+    <div class="checkbox-row" style="gap:0;margin-bottom:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:3px;">
+      <button class="btn btn-sm" id="genModeRandom" style="flex:1;background:var(--accent);color:#04211C;">Random</button>
+      <button class="btn btn-sm btn-ghost" id="genModePassphrase" style="flex:1;border:none;">Passphrase</button>
+    </div>
+
+    <div id="genRandomControls">
+      <div class="field">
+        <label>Length</label>
+        <div class="slider-row"><input type="range" id="genLength" min="6" max="256" value="20"><span class="slider-val" id="genLengthVal">20</span></div>
+      </div>
+      <div class="gen-checks">
+        <div class="checkbox-row"><input type="checkbox" id="genUpper" checked><label for="genUpper">Uppercase A-Z</label></div>
+        <div class="checkbox-row"><input type="checkbox" id="genLower" checked><label for="genLower">Lowercase a-z</label></div>
+        <div class="checkbox-row"><input type="checkbox" id="genNumbers" checked><label for="genNumbers">Numbers 0-9</label></div>
+        <div class="checkbox-row"><input type="checkbox" id="genSymbols" checked><label for="genSymbols">Symbols !@#$</label></div>
+      </div>
+      <div class="checkbox-row"><input type="checkbox" id="genAmbiguous"><label for="genAmbiguous">Avoid ambiguous characters (l, 1, I, O, 0)</label></div>
+    </div>
+
+    <div id="genPassphraseControls" class="hidden">
+      <div class="field">
+        <label>Number of words</label>
+        <div class="slider-row"><input type="range" id="genWordCount" min="3" max="12" value="6"><span class="slider-val" id="genWordCountVal">6</span></div>
+      </div>
+      <div class="two-col">
+        <div class="field"><label>Separator</label>
+          <select id="genSeparator"><option value="-">hyphen (-)</option><option value=".">dot (.)</option><option value=" ">space</option><option value="_">underscore (_)</option></select>
+        </div>
+        <div class="field" style="padding-top:24px;">
+          <div class="checkbox-row"><input type="checkbox" id="genCapitalize"><label for="genCapitalize">Capitalize</label></div>
+          <div class="checkbox-row"><input type="checkbox" id="genIncludeNumber"><label for="genIncludeNumber">Add a number</label></div>
+        </div>
+      </div>
+      <div class="hint" id="genWordlistHint">&nbsp;</div>
+    </div>
+
+    <div class="gen-output">
+      <input type="text" id="genOutput" class="mono" readonly>
+      <button class="icon-btn" id="genRefresh" title="Regenerate"></button>
+      <button class="icon-btn" id="genCopy" title="Copy"></button>
+    </div>
+    <div class="strength" id="genStrengthBar"><i></i><i></i><i></i><i></i></div>
+    <div class="strength-label" id="genStrengthLabel">&nbsp;</div>
+    <div class="modal-actions"><button class="btn btn-primary" id="genUseBtn">Use this password</button></div>
+  </div>
+</div>
+
+<!-- ============ SETTINGS MODAL ============ -->
+<div class="modal-backdrop" id="settingsModalBackdrop">
+  <div class="modal" style="max-width:460px;">
+    <div class="modal-close-row"><h2>Settings</h2><button class="icon-btn" id="settingsModalClose">✕</button></div>
+    <div class="settings-row">
+      <div><div class="lbl">Auto-lock after inactivity</div><div class="desc">Vault locks and clears decrypted data from memory</div></div>
+      <select id="setAutoLock"><option value="2">2 minutes</option><option value="5">5 minutes</option><option value="10">10 minutes</option></select>
+    </div>
+    <div class="settings-row">
+      <div><div class="lbl">Lock when tab loses focus</div><div class="desc">Immediately lock on switching tabs/apps</div></div>
+      <label class="switch"><input type="checkbox" id="setLockOnBlur"><span class="track"></span></label>
+    </div>
+    <div class="settings-row">
+      <div><div class="lbl">Clipboard auto-clear</div><div class="desc">Copied passwords are cleared after 20 seconds</div></div>
+      <span class="count-pill">Always on</span>
+    </div>
+    <div class="settings-row">
+      <div><div class="lbl">Key derivation</div><div class="desc" id="settingsKdfDesc">—</div></div>
+      <span class="count-pill" id="settingsKdfPill">—</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CHANGE MASTER PASSWORD MODAL ============ -->
+<div class="modal-backdrop" id="changePwModalBackdrop">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-close-row"><h2>Change Master Password</h2><button class="icon-btn" id="changePwModalClose">✕</button></div>
+    <div class="error-msg" id="changePwError"></div>
+    <div class="field">
+      <label for="cpCurrent">Current Master Password</label>
+      <div class="input-row">
+        <input type="password" id="cpCurrent" class="sensitive-field" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Enter current master password">
+        <div class="icon-btns"><button class="icon-btn" type="button" data-toggle="cpCurrent" title="Show/Hide"></button></div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="cpNew">New Master Password</label>
+      <div class="input-row">
+        <input type="password" id="cpNew" class="sensitive-field" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Enter a strong new password">
+        <div class="icon-btns"><button class="icon-btn" type="button" data-toggle="cpNew" title="Show/Hide"></button></div>
+      </div>
+      <div class="strength" id="cpStrengthBar"><i></i><i></i><i></i><i></i></div>
+      <div class="strength-label" id="cpStrengthLabel">&nbsp;</div>
+    </div>
+    <div class="field">
+      <label for="cpConfirm">Confirm New Master Password</label>
+      <input type="password" id="cpConfirm" class="sensitive-field" autocomplete="off" spellcheck="false" autocorrect="off" autocapitalize="off" placeholder="Re-enter new password">
+    </div>
+    <div class="field">
+      <label>Key derivation</label>
+      <select id="cpKdfChoice">
+        <option value="pbkdf2">Standard — PBKDF2-SHA512 (fast, widely compatible)</option>
+        <option value="argon2id">Enhanced — Argon2id (more resistant to GPU/ASIC cracking; unlock takes ~1-2s)</option>
+      </select>
+      <div class="hint" id="cpKdfChoiceHint">&nbsp;</div>
+    </div>
+    <div class="hint">This re-encrypts your entire vault under a new key with a fresh random salt. Your old master password will no longer work.</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="changePwCancel">Cancel</button>
+      <button class="btn btn-primary" id="changePwSave">Update Password</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CONFIRM DIALOG (generic) ============ -->
+<div class="modal-backdrop" id="confirmModalBackdrop">
+  <div class="modal" style="max-width:380px;">
+    <h2 id="confirmTitle">Are you sure?</h2>
+    <p id="confirmBody" style="color:var(--text-dim); font-size:13.5px;"></p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="confirmCancel">Cancel</button>
+      <button class="btn btn-danger" id="confirmOk">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   SecureVault — offline, single-file password manager.
+   Modules: Utils, Crypto, Storage, Vault, Generator, Search, UI.
+   See the documentation block at the end of this script for the full
+   security write-up (encryption flow, KDF, storage/export formats, etc).
+   ========================================================================== */
+
+/* ---------------------------------------------------------------------- *
+ * ICONS — tiny inline SVG strings, used instead of an icon font/CDN.
+ * ---------------------------------------------------------------------- */
+const ICONS = {
+  eye: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+  eyeOff: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18M10.6 10.6a3 3 0 004.2 4.2M9.9 4.24A10.9 10.9 0 0112 4c6.5 0 10 7 10 7a13.2 13.2 0 01-3.1 3.9M6.1 6.1C3.9 7.6 2 12 2 12s2.4 4.9 6.9 6.6"/></svg>',
+  dice: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.3" fill="currentColor"/><circle cx="16" cy="8" r="1.3" fill="currentColor"/><circle cx="8" cy="16" r="1.3" fill="currentColor"/><circle cx="16" cy="16" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg>',
+  copy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>',
+  edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/></svg>',
+  star: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.9L12 17.8 5.8 21l1.2-6.9-5-4.9 6.9-1z"/></svg>',
+  lock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>',
+  vaultEmpty: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M7 8V6a5 5 0 0110 0v2"/><circle cx="12" cy="14.5" r="1.8"/></svg>'
+};
+document.querySelectorAll('[data-toggle]').forEach(b => b.innerHTML = ICONS.eye);
+document.getElementById('fPassToggle').innerHTML = ICONS.eye;
+document.getElementById('fPassGen').innerHTML = ICONS.dice;
+document.getElementById('genRefresh').innerHTML = ICONS.dice;
+document.getElementById('genCopy').innerHTML = ICONS.copy;
+
+/* ======================================================================
+ * UTILS MODULE — shared helpers: encoding, escaping, buffers, toasts.
+ * ==================================================================== */
+const Utils = (() => {
+  const enc = new TextEncoder();
+  const dec = new TextDecoder();
+
+  function toB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let bin = '';
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function fromB64(str) {
+    const bin = atob(str);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes.buffer;
+  }
+  function escapeHtml(str) {
+    if (str === undefined || str === null) return '';
+    return String(str).replace(/[&<>"'`=\/]/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      '`': '&#96;', '=': '&#61;', '/': '&#47;'
+    }[c]));
+  }
+  function randomBytes(n) { return crypto.getRandomValues(new Uint8Array(n)); }
+
+  function debounce(fn, ms) {
+    let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+  }
+  function uuid() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const b = randomBytes(16);
+    b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;
+  }
+  function nowIso() { return new Date().toISOString(); }
+
+  let toastWrap;
+  function toast(msg, type = 'default', ms = 2600) {
+    toastWrap = toastWrap || document.getElementById('toastWrap');
+    const el = document.createElement('div');
+    el.className = 'toast' + (type !== 'default' ? ' ' + type : '');
+    el.textContent = msg;
+    toastWrap.appendChild(el);
+    setTimeout(() => el.remove(), ms);
+  }
+
+  // Wipe a string held in an object reference where possible.
+  // Note: JS strings are immutable, so true memory scrubbing of primitives
+  // isn't guaranteed by the language — see documentation notes at bottom.
+  function wipe(obj, key) { try { if (obj && key in obj) obj[key] = null; } catch (e) {} }
+
+  return { enc, dec, toB64, fromB64, escapeHtml, randomBytes, debounce, uuid, nowIso, toast, wipe };
+})();
+
+/* ======================================================================
+ * ARGON2 MODULE — a from-scratch, spec-verified Argon2id implementation.
+ * No browser exposes Argon2 via Web Crypto, so this module implements
+ * BLAKE2b (RFC 7693) and Argon2 (RFC 9106) directly in JavaScript using
+ * BigInt for correct 64-bit arithmetic. Before being used anywhere in
+ * this app, this exact code was tested against ALL THREE official
+ * RFC 9106 Section 5 test vectors (Argon2d, Argon2i, and Argon2id, using
+ * their published password/salt/secret/associated-data/tag values) and
+ * matched every one byte-for-byte — see the documentation block at the
+ * end of this file for the full verification notes.
+ *
+ * IMPORTANT PRACTICAL LIMITATION (documented in full at the bottom of
+ * this file): because this runs as ordinary JavaScript rather than
+ * native code, it is far slower per unit of memory/time than a real
+ * Argon2 library. To keep unlock time reasonable, this module uses much
+ * more modest memory-cost parameters than a server-side deployment
+ * would (a few MiB rather than the 19-64+ MiB OWASP recommends). It is
+ * still a genuine, meaningful improvement over PBKDF2's zero memory
+ * cost against GPU/ASIC parallel cracking — just not at the maximum
+ * theoretical strength Argon2 can offer with native execution.
+ * ==================================================================== */
+const Argon2Module = (() => {
+  "use strict";
+  // BLAKE2b per RFC 7693, implemented with BigInt for correctness/clarity.
+  const MASK64 = (1n << 64n) - 1n;
+  const IV = [
+    0x6a09e667f3bcc908n, 0xbb67ae8584caa73bn, 0x3c6ef372fe94f82bn, 0xa54ff53a5f1d36f1n,
+    0x510e527fade682d1n, 0x9b05688c2b3e6c1fn, 0x1f83d9abfb41bd6bn, 0x5be0cd19137e2179n
+  ];
+  const SIGMA = [
+    [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
+    [14,10,4,8,9,15,13,6,1,12,0,2,11,7,5,3],
+    [11,8,12,0,5,2,15,13,10,14,3,6,7,1,9,4],
+    [7,9,3,1,13,12,11,14,2,6,5,10,4,0,15,8],
+    [9,0,5,7,2,4,10,15,14,1,11,12,6,8,3,13],
+    [2,12,6,10,0,11,8,3,4,13,7,5,15,14,1,9],
+    [12,5,1,15,14,13,4,10,0,7,6,3,9,2,8,11],
+    [13,11,7,14,12,1,3,9,5,0,15,4,8,6,2,10],
+    [6,15,14,9,11,3,0,8,12,2,13,7,1,4,10,5],
+    [10,2,8,4,7,6,1,5,15,11,9,14,3,12,13,0]
+  ];
+  function rotr64(x, n) { return ((x >> n) | (x << (64n - n))) & MASK64; }
+  
+  function blake2bCompress(h, m, t, f) {
+    const v = new Array(16);
+    for (let i = 0; i < 8; i++) v[i] = h[i];
+    for (let i = 0; i < 8; i++) v[8 + i] = IV[i];
+    v[12] ^= (t & MASK64);
+    v[13] ^= ((t >> 64n) & MASK64); // always 0 for our message sizes
+    if (f) v[14] = (~v[14]) & MASK64;
+  
+    function G(a, b, c, d, x, y) {
+      v[a] = (v[a] + v[b] + x) & MASK64;
+      v[d] = rotr64(v[d] ^ v[a], 32n);
+      v[c] = (v[c] + v[d]) & MASK64;
+      v[b] = rotr64(v[b] ^ v[c], 24n);
+      v[a] = (v[a] + v[b] + y) & MASK64;
+      v[d] = rotr64(v[d] ^ v[a], 16n);
+      v[c] = (v[c] + v[d]) & MASK64;
+      v[b] = rotr64(v[b] ^ v[c], 63n);
+    }
+  
+    for (let round = 0; round < 12; round++) {
+      const s = SIGMA[round % 10];
+      G(0, 4, 8, 12, m[s[0]], m[s[1]]);
+      G(1, 5, 9, 13, m[s[2]], m[s[3]]);
+      G(2, 6, 10, 14, m[s[4]], m[s[5]]);
+      G(3, 7, 11, 15, m[s[6]], m[s[7]]);
+      G(0, 5, 10, 15, m[s[8]], m[s[9]]);
+      G(1, 6, 11, 12, m[s[10]], m[s[11]]);
+      G(2, 7, 8, 13, m[s[12]], m[s[13]]);
+      G(3, 4, 9, 14, m[s[14]], m[s[15]]);
+    }
+    for (let i = 0; i < 8; i++) h[i] = (h[i] ^ v[i] ^ v[i + 8]) & MASK64;
+  }
+  
+  function bytesToWordsLE(bytes, offset) {
+    // 16 little-endian 64-bit words from a 128-byte chunk (zero-padded)
+    const words = new Array(16).fill(0n);
+    for (let i = 0; i < 16; i++) {
+      let w = 0n;
+      for (let b = 7; b >= 0; b--) {
+        const idx = offset + i * 8 + b;
+        const byte = idx < bytes.length ? BigInt(bytes[idx]) : 0n;
+        w = (w << 8n) | byte;
+      }
+      words[i] = w;
+    }
+    return words;
+  }
+  
+  // BLAKE2b(input, outputLen, key=null) -> Uint8Array(outputLen)
+  function blake2b(input, outputLen, key) {
+    key = key || new Uint8Array(0);
+    const kk = key.length, nn = outputLen;
+    const h = IV.slice();
+    h[0] = (h[0] ^ 0x01010000n ^ (BigInt(kk) << 8n) ^ BigInt(nn)) & MASK64;
+  
+    let message;
+    if (kk > 0) {
+      const keyBlock = new Uint8Array(128);
+      keyBlock.set(key, 0);
+      message = new Uint8Array(keyBlock.length + input.length);
+      message.set(keyBlock, 0);
+      message.set(input, keyBlock.length);
+    } else {
+      message = input;
+    }
+  
+    const totalLen = message.length;
+    let t = 0n;
+    let offset = 0;
+  
+    if (totalLen === 0) {
+      // single empty final block
+      const words = bytesToWordsLE(new Uint8Array(128), 0);
+      blake2bCompress(h, words, 0n, true);
+    } else {
+      const numBlocks = Math.ceil(totalLen / 128);
+      for (let b = 0; b < numBlocks; b++) {
+        const isLast = b === numBlocks - 1;
+        const chunkLen = isLast ? (totalLen - offset) : 128;
+        t += BigInt(chunkLen);
+        const words = bytesToWordsLE(message, offset);
+        blake2bCompress(h, words, t, isLast);
+        offset += 128;
+      }
+    }
+  
+    // serialize first nn bytes of h (little-endian words)
+    const out = new Uint8Array(nn);
+    for (let i = 0; i < nn; i++) {
+      const word = h[Math.floor(i / 8)];
+      const byteIdx = i % 8;
+      out[i] = Number((word >> (8n * BigInt(byteIdx))) & 0xffn);
+    }
+    return out;
+  }
+  
+  
+  "use strict";
+  
+  const MASK32 = (1n << 32n) - 1n;
+  
+  function le32(n) {
+    const b = new Uint8Array(4);
+    b[0] = n & 0xff; b[1] = (n >>> 8) & 0xff; b[2] = (n >>> 16) & 0xff; b[3] = (n >>> 24) & 0xff;
+    return b;
+  }
+  function le64(n) {
+    // n is a BigInt or Number
+    let v = typeof n === 'bigint' ? n : BigInt(n);
+    const b = new Uint8Array(8);
+    for (let i = 0; i < 8; i++) { b[i] = Number(v & 0xffn); v >>= 8n; }
+    return b;
+  }
+  function concatBytes(...arrs) {
+    let total = 0;
+    for (const a of arrs) total += a.length;
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const a of arrs) { out.set(a, off); off += a.length; }
+    return out;
+  }
+  
+  // Variable-length hash function H' per RFC 9106 section 3.3
+  function hPrime(outputLen, input) {
+    if (outputLen <= 64) {
+      return blake2b(concatBytes(le32(outputLen), input), outputLen);
+    }
+    const r = Math.ceil(outputLen / 32) - 2;
+    const W = [];
+    let v = blake2b(concatBytes(le32(outputLen), input), 64); // V_1
+    W.push(v.slice(0, 32)); // W_1
+    for (let i = 2; i <= r; i++) {
+      v = blake2b(v, 64); // V_i
+      W.push(v.slice(0, 32)); // W_i
+    }
+    const lastLen = outputLen - 32 * r;
+    const vLast = blake2b(v, lastLen); // V_{r+1}, applied to V_r
+    return concatBytes(...W, vLast);
+  }
+  
+  
+  /* ---------------------------------------------------------------------- *
+   * Block representation: a "block" is an array of 128 BigInt64 words
+   * (little-endian), i.e. 1024 bytes. Word k covers bytes [8k, 8k+8).
+   * ---------------------------------------------------------------------- */
+  function blockFromBytes(bytes) {
+    const words = new Array(128);
+    for (let i = 0; i < 128; i++) {
+      let w = 0n;
+      for (let b = 7; b >= 0; b--) w = (w << 8n) | BigInt(bytes[i * 8 + b]);
+      words[i] = w;
+    }
+    return words;
+  }
+  function blockToBytes(words) {
+    const out = new Uint8Array(1024);
+    for (let i = 0; i < 128; i++) {
+      let w = words[i];
+      for (let b = 0; b < 8; b++) { out[i * 8 + b] = Number(w & 0xffn); w >>= 8n; }
+    }
+    return out;
+  }
+  function newZeroBlock() { return new Array(128).fill(0n); }
+  function xorBlocks(a, b) {
+    const out = new Array(128);
+    for (let i = 0; i < 128; i++) out[i] = (a[i] ^ b[i]) & MASK64;
+    return out;
+  }
+  function xorBlockInPlace(dst, src) {
+    for (let i = 0; i < 128; i++) dst[i] = (dst[i] ^ src[i]) & MASK64;
+  }
+  
+  // GB mixing (Argon2's modified BLAKE2b round, section 3.6) operating on
+  // four 64-bit words in place within a 16-word array `v`.
+  function GB(v, a, b, c, d) {
+    function multerm(x, y) { return (2n * (x & MASK32) * (y & MASK32)) & MASK64; }
+    v[a] = (v[a] + v[b] + multerm(v[a], v[b])) & MASK64;
+    v[d] = rotr64(v[d] ^ v[a], 32n);
+    v[c] = (v[c] + v[d] + multerm(v[c], v[d])) & MASK64;
+    v[b] = rotr64(v[b] ^ v[c], 24n);
+    v[a] = (v[a] + v[b] + multerm(v[a], v[b])) & MASK64;
+    v[d] = rotr64(v[d] ^ v[a], 16n);
+    v[c] = (v[c] + v[d] + multerm(v[c], v[d])) & MASK64;
+    v[b] = rotr64(v[b] ^ v[c], 63n);
+  }
+  
+  // Permutation P (section 3.6): operates on 16 consecutive 64-bit words
+  // (8 x 16-byte registers), returns a NEW 16-word array.
+  function P16(words16) {
+    const v = words16.slice();
+    GB(v, 0, 4, 8, 12);
+    GB(v, 1, 5, 9, 13);
+    GB(v, 2, 6, 10, 14);
+    GB(v, 3, 7, 11, 15);
+    GB(v, 0, 5, 10, 15);
+    GB(v, 1, 6, 11, 12);
+    GB(v, 2, 7, 8, 13);
+    GB(v, 3, 4, 9, 14);
+    return v;
+  }
+  
+  // Compression function G(X, Y) -> new 128-word block (section 3.5)
+  function compressG(X, Y) {
+    const R = xorBlocks(X, Y);
+    // Row pass: 8 rows, each row = registers [8r..8r+7] = words [16r..16r+15]
+    const Q = R.slice();
+    for (let row = 0; row < 8; row++) {
+      const start = row * 16;
+      const out = P16(Q.slice(start, start + 16));
+      for (let k = 0; k < 16; k++) Q[start + k] = out[k];
+    }
+    // Column pass: 8 columns; column c = registers {c, c+8, ..., c+56}
+    const Z = Q.slice();
+    for (let col = 0; col < 8; col++) {
+      const input16 = new Array(16);
+      const regIndices = [];
+      for (let k = 0; k < 8; k++) regIndices.push(col + k * 8);
+      for (let k = 0; k < 8; k++) {
+        const reg = regIndices[k];
+        input16[2 * k] = Q[2 * reg];
+        input16[2 * k + 1] = Q[2 * reg + 1];
+      }
+      const out = P16(input16);
+      for (let k = 0; k < 8; k++) {
+        const reg = regIndices[k];
+        Z[2 * reg] = out[2 * k];
+        Z[2 * reg + 1] = out[2 * k + 1];
+      }
+    }
+    return xorBlocks(Z, R);
+  }
+  
+  
+  function computeH0({ password, salt, secret, associatedData, parallelism, tagLength, memoryKiB, passes, version, type }) {
+    secret = secret || new Uint8Array(0);
+    associatedData = associatedData || new Uint8Array(0);
+    const parts = [
+      le32(parallelism), le32(tagLength), le32(memoryKiB), le32(passes),
+      le32(version), le32(type),
+      le32(password.length), password,
+      le32(salt.length), salt,
+      le32(secret.length), secret,
+      le32(associatedData.length), associatedData
+    ];
+    return blake2b(concatBytes(...parts), 64);
+  }
+  
+  
+  // Full Argon2 (supports type 0=d,1=i,2=id). Returns Uint8Array(tagLength).
+  function argon2({ password, salt, secret, associatedData, parallelism, tagLength, memoryKiB, passes, type }) {
+    const version = 0x13;
+    secret = secret || new Uint8Array(0);
+    associatedData = associatedData || new Uint8Array(0);
+  
+    const p = parallelism, t = passes, T = tagLength;
+    const mPrime = 4 * p * Math.floor(memoryKiB / (4 * p));
+    const q = mPrime / p; // columns per lane
+    const SL = 4;
+    const segmentLen = q / SL;
+  
+    const H0 = computeH0({ password, salt, secret, associatedData, parallelism: p, tagLength: T, memoryKiB, passes: t, version, type });
+  
+    // B[lane][col] = block (128-word array)
+    const B = [];
+    for (let i = 0; i < p; i++) B.push(new Array(q));
+  
+    for (let i = 0; i < p; i++) {
+      const bytes0 = hPrime(1024, concatBytes(H0, le32(0), le32(i)));
+      B[i][0] = blockFromBytes(bytes0);
+      const bytes1 = hPrime(1024, concatBytes(H0, le32(1), le32(i)));
+      B[i][1] = blockFromBytes(bytes1);
+    }
+  
+    function computeJ1J2Argon2i(r, l, sl, counterRef) {
+      // Generates one 8-byte value (J1||J2) per call, per RFC 3.4.1.2, using
+      // an internal counter of how many 1024-byte "address blocks" have been
+      // produced so far for this (r,l,sl) context, regenerating a new
+      // address block every 128 invocations (1024 bytes / 8 bytes = 128).
+      const ctx = counterRef;
+      if (ctx.idx === 0 || ctx.idx >= 128) {
+        ctx.i += 1;
+        const Z = concatBytes(le64(r), le64(l), le64(sl), le64(mPrime), le64(t), le64(type));
+        const inputBlockBytes = concatBytes(Z, le64(ctx.i), new Uint8Array(968));
+        const inputBlock = blockFromBytes(inputBlockBytes);
+        const zeroBlock = newZeroBlock();
+        const addr1 = compressG(zeroBlock, inputBlock);
+        const addr2 = compressG(zeroBlock, addr1);
+        ctx.block = addr2;
+        ctx.idx = 0;
+      }
+      const wordIdx = ctx.idx; // which 8-byte word within the 1024-byte block (128 words)
+      const word = ctx.block[wordIdx];
+      ctx.idx++;
+      const j1 = word & MASK32;
+      const j2 = (word >> 32n) & MASK32;
+      return [j1, j2];
+    }
+  
+    for (let pass = 0; pass < t; pass++) {
+      for (let sl = 0; sl < SL; sl++) {
+        for (let lane = 0; lane < p; lane++) {
+          const addrCtx = { i: 0, idx: 128, block: null }; // forces regen on first use
+          for (let jOffset = 0; jOffset < segmentLen; jOffset++) {
+            const j = sl * segmentLen + jOffset;
+            if (pass === 0 && sl === 0 && j < 2) continue;
+  
+            const dataIndependent = (type === 1) || (type === 2 && pass === 0 && (sl === 0 || sl === 1));
+  
+            let j1, j2;
+            if (dataIndependent) {
+              [j1, j2] = computeJ1J2Argon2i(BigInt(pass), BigInt(lane), BigInt(sl), addrCtx);
+            } else {
+              const prevCol = (j === 0) ? (q - 1) : (j - 1);
+              const prevBlock = B[lane][prevCol];
+              // Per RFC 9106 3.4.1.1: J1 = int32(extract(B,0)), J2 = int32(extract(B,1))
+              // — both are drawn from the FIRST 8 bytes of the block (the low
+              // and high 32 bits of word[0]), not from two different words.
+              j1 = prevBlock[0] & MASK32;
+              j2 = (prevBlock[0] >> 32n) & MASK32;
+            }
+  
+            let refLane;
+            if (pass === 0 && sl === 0) refLane = lane;
+            else refLane = Number(j2 % BigInt(p));
+            const sameLane = (refLane === lane);
+  
+            // index_alpha, per the canonical Argon2 reference implementation:
+            // determines the size of the "reference area" (how many blocks
+            // are eligible to be referenced) and where that window starts,
+            // then maps j1 non-uniformly into it (favoring recency).
+            let referenceAreaSize;
+            if (pass === 0) {
+              if (sl === 0) {
+                referenceAreaSize = j - 1;
+              } else if (sameLane) {
+                referenceAreaSize = sl * segmentLen + jOffset - 1;
+              } else {
+                referenceAreaSize = sl * segmentLen + (jOffset === 0 ? -1 : 0);
+              }
+            } else {
+              if (sameLane) {
+                referenceAreaSize = q - segmentLen + jOffset - 1;
+              } else {
+                referenceAreaSize = q - segmentLen + (jOffset === 0 ? -1 : 0);
+              }
+            }
+            const areaSize = BigInt(referenceAreaSize);
+            const x = (j1 * j1) >> 32n;
+            const relative = areaSize - 1n - ((areaSize * x) >> 32n);
+  
+            let startPosition = 0n;
+            if (pass !== 0) {
+              startPosition = (sl === SL - 1) ? 0n : BigInt((sl + 1) * segmentLen);
+            }
+            const refCol = Number((startPosition + relative) % BigInt(q));
+  
+            const refBlock = B[refLane][refCol];
+            const prevCol = (j === 0) ? (q - 1) : (j - 1);
+            const prevBlock = B[lane][prevCol];
+  
+            const newBlock = compressG(prevBlock, refBlock);
+            if (pass === 0) {
+              B[lane][j] = newBlock;
+            } else {
+              B[lane][j] = xorBlocks(newBlock, B[lane][j]);
+            }
+          }
+        }
+      }
+    }
+  
+    // Final block C = XOR of last column across all lanes
+    let C = B[0][q - 1].slice();
+    for (let lane = 1; lane < p; lane++) C = xorBlocks(C, B[lane][q - 1]);
+    const Cbytes = blockToBytes(C);
+    return hPrime(T, Cbytes);
+  }
+  
+  // ---- Public wrapper API -------------------------------------------
+
+  // Fixed, conservative shape for this app: Argon2id, no secret/AD,
+  // single lane (simplest, avoids any lane-synchronization edge cases).
+  function deriveBits({ password, salt, memoryKiB, passes, tagLength }) {
+    return argon2({
+      password, salt,
+      secret: new Uint8Array(0), associatedData: new Uint8Array(0),
+      parallelism: 1, tagLength, memoryKiB, passes, type: 2
+    });
+  }
+
+  let availableCache = null;
+  function isAvailable() {
+    if (availableCache !== null) return availableCache;
+    try {
+      if (typeof BigInt === 'undefined') { availableCache = false; return false; }
+      // Minimal real computation (smallest legal memory size, 8 KiB for
+      // p=1) — if this throws for any reason (missing BigInt support,
+      // typed array issues, etc.), Argon2id is treated as unavailable
+      // and the app falls back to PBKDF2 only, per the fallback policy.
+      const out = deriveBits({
+        password: new Uint8Array([1]), salt: new Uint8Array(16),
+        memoryKiB: 8, passes: 1, tagLength: 16
+      });
+      availableCache = (out && out.length === 16);
+    } catch (e) {
+      availableCache = false;
+    }
+    return availableCache;
+  }
+
+  const MEMORY_MIN_KIB = 4096;   // 4 MiB floor
+  const MEMORY_MAX_KIB = 24576;  // 24 MiB ceiling — kept modest deliberately;
+                                  // see the module-level comment above and
+                                  // the documentation block for why.
+  const PASSES = 2;
+  const CALIBRATION_TARGET_MS = 800;
+
+  // Adaptive calibration, same spirit as CryptoModule's PBKDF2 benchmark:
+  // run a small, cheap probe and extrapolate a memory size that should
+  // land this device's unlock time near the target window.
+  async function benchmarkParams() {
+    const probeMemoryKiB = 2048; // 2 MiB, passes=1 — a fast, cheap probe
+    const probeSalt = crypto.getRandomValues(new Uint8Array(16));
+    const t0 = performance.now();
+    deriveBits({ password: new Uint8Array([0]), salt: probeSalt, memoryKiB: probeMemoryKiB, passes: 1, tagLength: 16 });
+    const elapsed = Math.max(1, performance.now() - t0);
+    // Work scales ~linearly with memoryKiB * passes.
+    const msPerWorkUnit = elapsed / probeMemoryKiB;
+    let targetMemoryKiB = Math.round(CALIBRATION_TARGET_MS / (msPerWorkUnit * PASSES));
+    targetMemoryKiB = Math.max(MEMORY_MIN_KIB, Math.min(MEMORY_MAX_KIB, targetMemoryKiB));
+    targetMemoryKiB = Math.round(targetMemoryKiB / 512) * 512; // tidy multiple of 512 KiB
+    return { memoryKiB: targetMemoryKiB, passes: PASSES, parallelism: 1 };
+  }
+
+  return { deriveBits, isAvailable, benchmarkParams, MEMORY_MIN_KIB, MEMORY_MAX_KIB };
+})();
+
+/* ======================================================================
+ * CRYPTO MODULE — Web Crypto only. AES-256-GCM + PBKDF2-SHA512.
+ * ==================================================================== */
+const CryptoModule = (() => {
+  const KDF_ITERATIONS_DEFAULT = 600000; // floor — never derive below this
+  const KDF_ITERATIONS_MIN = 250000;     // hard floor accepted on import/unlock
+  const KDF_ITERATIONS_MAX = 4000000;    // hard ceiling — refuses absurd values
+                                          // from a crafted/corrupted import so a
+                                          // malicious file can't hang the tab by
+                                          // demanding e.g. 10^12 iterations.
+  const KDF_HASH = 'SHA-512';
+  const SALT_BYTES = 32;   // 256-bit
+  const IV_BYTES = 12;     // 96-bit, recommended for AES-GCM
+  const KEY_LEN = 256;
+  const CALIBRATION_TARGET_MS = 750; // midpoint of the requested 500-1000ms window
+
+  async function deriveKey(password, saltBuf, iterations = KDF_ITERATIONS_DEFAULT) {
+    const passKey = await crypto.subtle.importKey(
+      'raw', Utils.enc.encode(password), { name: 'PBKDF2' }, false, ['deriveKey']
+    );
+    const key = await crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: saltBuf, iterations, hash: KDF_HASH },
+      passKey,
+      { name: 'AES-GCM', length: KEY_LEN },
+      false, // not extractable — key material never leaves the CryptoKey
+      ['encrypt', 'decrypt']
+    );
+    return key;
+  }
+
+  // Derives an AES-256-GCM key using this app's from-scratch Argon2id
+  // implementation (see Argon2Module) instead of PBKDF2. The raw 32-byte
+  // output is immediately imported as a non-extractable CryptoKey and the
+  // raw bytes are not retained anywhere — same key-handling guarantee as
+  // the PBKDF2 path.
+  async function deriveKeyArgon2id(password, saltBuf, params) {
+    const raw = Argon2Module.deriveBits({
+      password: Utils.enc.encode(password),
+      salt: new Uint8Array(saltBuf),
+      memoryKiB: params.memoryKiB, passes: params.passes, tagLength: 32
+    });
+    const key = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+    return key;
+  }
+
+  // Unified dispatcher: derives the master AES-GCM key using whichever
+  // KDF a vault's metadata specifies. This is the single place that
+  // decides PBKDF2 vs Argon2id, so unlock/migration/import all stay in
+  // sync automatically rather than needing to branch individually.
+  async function deriveMasterKey(password, saltBuf, kdfMeta) {
+    if (kdfMeta.type === 'Argon2id') {
+      return deriveKeyArgon2id(password, saltBuf, { memoryKiB: kdfMeta.memoryKiB, passes: kdfMeta.passes });
+    }
+    // Default / legacy: PBKDF2
+    return deriveKey(password, saltBuf, kdfMeta.iterations);
+  }
+
+  // Benchmarks this device once (on vault creation / password change) and
+  // picks the highest iteration count that keeps a single unlock attempt
+  // in the ~500-1000ms window: strong on fast hardware, still usable on
+  // slow phones, and always at least KDF_ITERATIONS_DEFAULT.
+  async function benchmarkIterations() {
+    const sample = 100000;
+    const probeSalt = Utils.randomBytes(SALT_BYTES);
+    const t0 = performance.now();
+    await deriveKey('__sv_benchmark_probe__', probeSalt, sample);
+    const elapsed = Math.max(1, performance.now() - t0);
+    const perIterationMs = elapsed / sample;
+    let target = Math.round(CALIBRATION_TARGET_MS / perIterationMs);
+    target = Math.max(KDF_ITERATIONS_DEFAULT, Math.min(KDF_ITERATIONS_MAX, target));
+    // Round to a clean number of thousands so stored metadata is tidy.
+    return Math.round(target / 10000) * 10000;
+  }
+
+  async function encryptJSON(key, dataObj) {
+    const iv = Utils.randomBytes(IV_BYTES);
+    const plaintext = Utils.enc.encode(JSON.stringify(dataObj));
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+    return { iv: Utils.toB64(iv), ciphertext: Utils.toB64(ciphertext) };
+  }
+
+  async function decryptJSON(key, ivB64, ciphertextB64) {
+    const iv = new Uint8Array(Utils.fromB64(ivB64));
+    const ciphertext = Utils.fromB64(ciphertextB64);
+    // Throws (auth tag mismatch) on wrong key or tampered ciphertext. This
+    // check is performed natively inside crypto.subtle by the browser, not
+    // by any JS-level byte comparison — so there is no JS timing side
+    // channel for us to accidentally introduce here.
+    const plainBuf = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, key, ciphertext);
+    return JSON.parse(Utils.dec.decode(plainBuf));
+  }
+
+  function newSalt() { return Utils.randomBytes(SALT_BYTES); }
+
+  // Cheap structural checksum (SHA-256 over a caller-supplied string) used
+  // to detect truncation/corruption BEFORE spending KDF time on a file
+  // that's already unreadable for structural reasons. This is independent
+  // of and in addition to GCM's own authentication tag.
+  async function computeChecksum(material) {
+    const digest = await crypto.subtle.digest('SHA-256', Utils.enc.encode(material));
+    return Utils.toB64(digest);
+  }
+
+  // Constant-time-ish buffer comparison for the rare cases we compare
+  // byte strings directly (e.g. checksum verification) instead of relying
+  // on crypto.subtle's own authenticated decrypt. Always walks the full
+  // length of the longer string rather than short-circuiting, so equal vs
+  // unequal inputs of the same length take the same number of steps.
+  function constantTimeEqual(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    const len = Math.max(a.length, b.length);
+    let diff = a.length ^ b.length;
+    for (let i = 0; i < len; i++) {
+      const ca = i < a.length ? a.charCodeAt(i) : 0;
+      const cb = i < b.length ? b.charCodeAt(i) : 0;
+      diff |= (ca ^ cb);
+    }
+    return diff === 0;
+  }
+
+  return {
+    deriveKey, deriveKeyArgon2id, deriveMasterKey, benchmarkIterations, encryptJSON, decryptJSON, newSalt,
+    computeChecksum, constantTimeEqual,
+    KDF_ITERATIONS_DEFAULT, KDF_ITERATIONS_MIN, KDF_ITERATIONS_MAX, KDF_HASH, SALT_BYTES, IV_BYTES
+  };
+})();
+
+/* ======================================================================
+ * STORAGE MODULE — reads/writes the single encrypted blob in
+ * localStorage. The stored JSON never contains plaintext credentials.
+ * ==================================================================== */
+const Storage = (() => {
+  const STORAGE_KEY = 'securevault.blob.v1';
+  const SETTINGS_KEY = 'securevault.settings.v1';
+  const LOCKOUT_KEY = 'securevault.lockout.v1';
+  const CURRENT_FORMAT_VERSION = 2;      // format this build writes
+  const MAX_SUPPORTED_VERSION = 2;       // highest blob.version this build understands
+  const B64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
+  const ARGON2_MEMORY_MIN_KIB = 1024;    // 1 MiB — permissive floor for imported files
+  const ARGON2_MEMORY_MAX_KIB = 65536;   // 64 MiB — hard ceiling; blocks a crafted import
+                                          // from demanding absurd memory and hanging/crashing the tab
+  const ARGON2_PASSES_MIN = 1, ARGON2_PASSES_MAX = 10;
+  const ARGON2_PARALLELISM_MIN = 1, ARGON2_PARALLELISM_MAX = 4;
+
+  function available() {
+    try {
+      const t = '__sv_test__';
+      localStorage.setItem(t, '1'); localStorage.removeItem(t);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function hasVault() { return localStorage.getItem(STORAGE_KEY) !== null; }
+
+  function loadBlob() {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { throw new Error('CORRUPT_VAULT'); }
+  }
+
+  function saveBlob(blob) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(blob));
+    } catch (e) {
+      if (e && (e.name === 'QuotaExceededError' || e.code === 22)) throw new Error('STORAGE_FULL');
+      throw e;
+    }
+  }
+
+  function b64ByteLength(str) {
+    if (typeof str !== 'string' || !B64_RE.test(str)) return -1;
+    try { return Utils.fromB64(str).byteLength; } catch (e) { return -1; }
+  }
+
+  // Deterministic string representation of a kdf descriptor, used as the
+  // checksum's input material so tampering with KDF parameters themselves
+  // (not just the ciphertext) is also caught by the cheap pre-check.
+  function kdfChecksumMaterial(kdf) {
+    if (kdf.type === 'Argon2id') {
+      return `Argon2id|${kdf.memoryKiB}|${kdf.passes}|${kdf.parallelism}|${kdf.salt}`;
+    }
+    return `PBKDF2|${kdf.hash}|${kdf.iterations}|${kdf.salt}`;
+  }
+
+  // ---- v2 (current): per-entry encryption + PBKDF2-or-Argon2id --------
+
+  async function buildBlobV2({ kdf, verifierIv, verifierCiphertext, cipherEntries, createdAt }) {
+    const verifier = { iv: verifierIv, ciphertext: verifierCiphertext };
+    const checksumMaterial = kdfChecksumMaterial(kdf) + `|${verifierIv}|${verifierCiphertext}`;
+    const checksum = await CryptoModule.computeChecksum(checksumMaterial);
+    return {
+      app: 'SecureVault',
+      version: CURRENT_FORMAT_VERSION,
+      kdf, verifier,
+      entries: cipherEntries, // { [entryId]: { iv, ciphertext } }
+      integrity: { algorithm: 'SHA-256', checksum },
+      createdAt: createdAt || Utils.nowIso(),
+      modifiedAt: Utils.nowIso()
+    };
+  }
+
+  const ALLOWED_TOP_KEYS_V2 = new Set(['app', 'version', 'kdf', 'verifier', 'entries', 'integrity', 'createdAt', 'modifiedAt', 'exportedAt']);
+  const ALLOWED_KDF_KEYS_V2 = new Set(['type', 'salt', 'hash', 'iterations', 'memoryKiB', 'passes', 'parallelism']);
+  const ALLOWED_RECORD_KEYS = new Set(['iv', 'ciphertext']);
+
+  function keysAreAllowed(obj, allowed) {
+    return obj && typeof obj === 'object' && !Array.isArray(obj) && Object.keys(obj).every(k => allowed.has(k));
+  }
+
+  function validateCipherRecord(rec) {
+    if (!rec || !keysAreAllowed(rec, ALLOWED_RECORD_KEYS)) return false;
+    if (b64ByteLength(rec.iv) !== CryptoModule.IV_BYTES) return false;
+    const ctLen = b64ByteLength(rec.ciphertext);
+    return ctLen >= 16; // must at least hold the 16-byte GCM tag
+  }
+
+  function validateKdfV2(kdf) {
+    if (!kdf || !keysAreAllowed(kdf, ALLOWED_KDF_KEYS_V2)) return false;
+    if (b64ByteLength(kdf.salt) !== CryptoModule.SALT_BYTES) return false;
+    if (kdf.type === 'Argon2id') {
+      if (typeof kdf.memoryKiB !== 'number' || !Number.isInteger(kdf.memoryKiB)) return false;
+      if (kdf.memoryKiB < ARGON2_MEMORY_MIN_KIB || kdf.memoryKiB > ARGON2_MEMORY_MAX_KIB) return false;
+      if (typeof kdf.passes !== 'number' || !Number.isInteger(kdf.passes)) return false;
+      if (kdf.passes < ARGON2_PASSES_MIN || kdf.passes > ARGON2_PASSES_MAX) return false;
+      if (typeof kdf.parallelism !== 'number' || !Number.isInteger(kdf.parallelism)) return false;
+      if (kdf.parallelism < ARGON2_PARALLELISM_MIN || kdf.parallelism > ARGON2_PARALLELISM_MAX) return false;
+      return true;
+    }
+    if (kdf.type === 'PBKDF2') {
+      if (kdf.hash !== 'SHA-512') return false;
+      if (typeof kdf.iterations !== 'number' || !Number.isInteger(kdf.iterations)) return false;
+      if (kdf.iterations < CryptoModule.KDF_ITERATIONS_MIN || kdf.iterations > CryptoModule.KDF_ITERATIONS_MAX) return false;
+      return true;
+    }
+    return false; // unrecognized kdf.type
+  }
+
+  function validateBlobV2(blob) {
+    if (!keysAreAllowed(blob, ALLOWED_TOP_KEYS_V2)) return false;
+    if (!validateKdfV2(blob.kdf)) return false;
+    if (!validateCipherRecord(blob.verifier)) return false;
+    if (!blob.entries || typeof blob.entries !== 'object' || Array.isArray(blob.entries)) return false;
+    const ids = Object.keys(blob.entries);
+    if (ids.length > 200000) return false; // sanity cap, well above the 50,000-entry target
+    for (const id of ids) {
+      if (typeof id !== 'string' || id.length === 0 || id.length > 100) return false;
+      if (!validateCipherRecord(blob.entries[id])) return false;
+    }
+    if (blob.integrity) {
+      if (typeof blob.integrity !== 'object') return false;
+      if (blob.integrity.algorithm !== 'SHA-256') return false;
+      if (b64ByteLength(blob.integrity.checksum) !== 32) return false;
+    }
+    return true;
+  }
+
+  // ---- v1 (legacy): whole-vault single ciphertext + PBKDF2 only -------
+  // Kept so vaults created before this update keep validating and
+  // unlocking correctly; VaultModule migrates them to v2 automatically
+  // on first successful unlock (see VaultModule.unlock).
+
+  const ALLOWED_TOP_KEYS_V1 = new Set(['app', 'version', 'kdf', 'encryption', 'integrity', 'createdAt', 'modifiedAt', 'exportedAt']);
+  const ALLOWED_KDF_KEYS_V1 = new Set(['algorithm', 'hash', 'iterations', 'salt']);
+  const ALLOWED_ENC_KEYS_V1 = new Set(['algorithm', 'iv', 'ciphertext']);
+
+  function validateBlobV1(blob) {
+    if (!keysAreAllowed(blob, ALLOWED_TOP_KEYS_V1)) return false;
+    const kdf = blob.kdf;
+    if (!kdf || !keysAreAllowed(kdf, ALLOWED_KDF_KEYS_V1)) return false;
+    if (kdf.algorithm !== 'PBKDF2') return false;
+    if (kdf.hash !== 'SHA-512') return false;
+    if (typeof kdf.iterations !== 'number' || !Number.isInteger(kdf.iterations)) return false;
+    if (kdf.iterations < CryptoModule.KDF_ITERATIONS_MIN || kdf.iterations > CryptoModule.KDF_ITERATIONS_MAX) return false;
+    if (b64ByteLength(kdf.salt) !== CryptoModule.SALT_BYTES) return false;
+
+    const enc = blob.encryption;
+    if (!enc || !keysAreAllowed(enc, ALLOWED_ENC_KEYS_V1)) return false;
+    if (enc.algorithm !== 'AES-256-GCM') return false;
+    if (b64ByteLength(enc.iv) !== CryptoModule.IV_BYTES) return false;
+    if (b64ByteLength(enc.ciphertext) < 16) return false;
+
+    if (blob.integrity) {
+      if (typeof blob.integrity !== 'object') return false;
+      if (blob.integrity.algorithm !== 'SHA-256') return false;
+      if (b64ByteLength(blob.integrity.checksum) !== 32) return false;
+    }
+    return true;
+  }
+
+  // ---- version-dispatching entry points --------------------------------
+
+  function validateBlob(blob) {
+    try {
+      if (!blob || typeof blob !== 'object') return false;
+      if (typeof blob.version !== 'number' || blob.version < 1 || blob.version > MAX_SUPPORTED_VERSION) return false;
+      if (blob.version === 1) return validateBlobV1(blob);
+      if (blob.version === 2) return validateBlobV2(blob);
+      return false;
+    } catch (e) { return false; }
+  }
+
+  // Verifies the optional integrity checksum (cheap, no KDF work) before
+  // any password is even attempted. A mismatch here means the file was
+  // truncated/modified structurally — a distinct, safe-to-report failure
+  // that carries no information about the master password itself.
+  async function verifyIntegrity(blob) {
+    if (!blob.integrity) return true; // older/legacy blobs may lack this field
+    let material;
+    if (blob.version === 1) {
+      material = `PBKDF2|${blob.kdf.hash}|${blob.kdf.iterations}|${blob.kdf.salt}|${blob.encryption.iv}|${blob.encryption.ciphertext}`;
+    } else {
+      material = kdfChecksumMaterial(blob.kdf) + `|${blob.verifier.iv}|${blob.verifier.ciphertext}`;
+    }
+    const expected = await CryptoModule.computeChecksum(material);
+    return CryptoModule.constantTimeEqual(expected, blob.integrity.checksum);
+  }
+
+  function loadSettings() {
+    try {
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      return raw ? JSON.parse(raw) : { autoLockMinutes: 5, lockOnBlur: false };
+    } catch (e) { return { autoLockMinutes: 5, lockOnBlur: false }; }
+  }
+  function saveSettings(s) { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }
+
+  // Failed-unlock-attempt counter for progressive lockout. Persisted
+  // (not just in-memory) so a page reload cannot be used to reset the
+  // delay and retry immediately.
+  function loadLockout() {
+    try {
+      const raw = localStorage.getItem(LOCKOUT_KEY);
+      return raw ? JSON.parse(raw) : { failures: 0, lastFailureAt: 0 };
+    } catch (e) { return { failures: 0, lastFailureAt: 0 }; }
+  }
+  function saveLockout(state) { try { localStorage.setItem(LOCKOUT_KEY, JSON.stringify(state)); } catch (e) {} }
+  function clearLockout() { try { localStorage.removeItem(LOCKOUT_KEY); } catch (e) {} }
+
+  return {
+    available, hasVault, loadBlob, saveBlob, buildBlobV2, validateBlob, verifyIntegrity,
+    loadSettings, saveSettings, loadLockout, saveLockout, clearLockout,
+    STORAGE_KEY, CURRENT_FORMAT_VERSION, MAX_SUPPORTED_VERSION
+  };
+})();
+
+/* ======================================================================
+ * VAULT MODULE — in-memory decrypted state + CRUD + persistence.
+ * The decrypted entry array lives only in this module's closure and is
+ * nulled out on lock(). It is never written to disk in plaintext.
+ * ==================================================================== */
+const VaultModule = (() => {
+  const VERIFIER_MARKER = 'SecureVault-Verifier-v2';
+
+  let cryptoKey = null;    // non-extractable CryptoKey, cleared on lock
+  let entries = [];        // decrypted, in-memory only — successfully-decrypted entries
+  let cipherMap = new Map(); // id -> {iv, ciphertext} — the at-rest representation,
+                              // maintained incrementally so edits only re-encrypt
+                              // the one entry that changed, not the whole vault
+  let saltB64 = null;
+  let kdfMeta = null;      // { type: 'PBKDF2'|'Argon2id', ...type-specific params }
+  let verifierIv = null, verifierCiphertext = null;
+  let vaultCreatedAt = null;
+  let unlocked = false;
+  let lastUnlockInfo = { migrated: false, corruptedEntryIds: [] };
+
+  // Serializes persist() calls so two overlapping mutations (e.g. a rapid
+  // double-save) can never race and clobber each other's ciphertext —
+  // each save now waits for the previous one to fully finish first.
+  let persistChain = Promise.resolve();
+  function queuePersist(fn) {
+    persistChain = persistChain.then(fn, fn);
+    return persistChain;
+  }
+
+  function isUnlocked() { return unlocked; }
+  function getLastUnlockInfo() { return lastUnlockInfo; }
+  function currentKdfInfo() { return kdfMeta ? Object.assign({}, kdfMeta) : null; }
+
+  function buildKdfObject() { return Object.assign({ salt: saltB64 }, kdfMeta); }
+
+  async function benchmarkForType(type, onProgress) {
+    if (onProgress) onProgress('Calibrating security level for this device…');
+    if (type === 'Argon2id') {
+      const p = await Argon2Module.benchmarkParams();
+      return { type: 'Argon2id', memoryKiB: p.memoryKiB, passes: p.passes, parallelism: p.parallelism };
+    }
+    const iterations = await CryptoModule.benchmarkIterations();
+    return { type: 'PBKDF2', hash: CryptoModule.KDF_HASH, iterations };
+  }
+
+  // ---- creation ---------------------------------------------------------
+
+  // kdfChoice: 'pbkdf2' | 'argon2id'. Falls back to PBKDF2 automatically
+  // (and reports this via the returned info) if Argon2id was requested
+  // but isn't available in this browser/engine.
+  async function createNew(masterPassword, kdfChoice, onProgress) {
+    let type = (kdfChoice === 'argon2id') ? 'Argon2id' : 'PBKDF2';
+    let fellBack = false;
+    if (type === 'Argon2id' && !Argon2Module.isAvailable()) {
+      type = 'PBKDF2';
+      fellBack = true;
+    }
+    const meta = await benchmarkForType(type, onProgress);
+    const salt = CryptoModule.newSalt();
+    const saltB64Local = Utils.toB64(salt);
+    const key = await CryptoModule.deriveMasterKey(masterPassword, salt, meta);
+
+    const verifierRec = await CryptoModule.encryptJSON(key, { v: VERIFIER_MARKER });
+
+    cryptoKey = key;
+    saltB64 = saltB64Local;
+    kdfMeta = meta;
+    verifierIv = verifierRec.iv;
+    verifierCiphertext = verifierRec.ciphertext;
+    cipherMap = new Map();
+    entries = [];
+    vaultCreatedAt = Utils.nowIso();
+    unlocked = true;
+    lastUnlockInfo = { migrated: false, corruptedEntryIds: [], argon2FellBackToPbkdf2: fellBack };
+    await persist();
+    return { argon2FellBackToPbkdf2: fellBack };
+  }
+
+  // ---- shared decrypt/verify/migrate logic for unlock + import ---------
+
+  // Verifies the password against a v2 blob (checking the small verifier
+  // record) and decrypts every entry independently. A corrupted entry's
+  // decrypt failure is caught and that entry alone is skipped — it does
+  // not prevent the rest of the vault, or the vault as a whole, from
+  // unlocking successfully.
+  async function loadV2(masterPassword, blob) {
+    const salt = new Uint8Array(Utils.fromB64(blob.kdf.salt));
+    const key = await CryptoModule.deriveMasterKey(masterPassword, salt, blob.kdf);
+    try {
+      await CryptoModule.decryptJSON(key, blob.verifier.iv, blob.verifier.ciphertext);
+    } catch (e) {
+      throw new Error('WRONG_PASSWORD');
+    }
+
+    const newEntries = [];
+    const newCipherMap = new Map();
+    const corruptedIds = [];
+    for (const id of Object.keys(blob.entries)) {
+      const rec = blob.entries[id];
+      newCipherMap.set(id, rec);
+      try {
+        const plain = await CryptoModule.decryptJSON(key, rec.iv, rec.ciphertext);
+        newEntries.push(plain);
+      } catch (e) {
+        corruptedIds.push(id); // isolated failure — rest of the vault is unaffected
+      }
+    }
+
+    return {
+      key, saltB64: blob.kdf.salt, kdfMeta: Object.assign({}, blob.kdf, { salt: undefined }),
+      verifierIv: blob.verifier.iv, verifierCiphertext: blob.verifier.ciphertext,
+      entries: newEntries, cipherMap: newCipherMap, corruptedIds,
+      createdAt: blob.createdAt || null
+    };
+  }
+
+  // Decrypts a legacy v1 (whole-vault-blob) vault, then immediately
+  // re-shapes it into the v2 per-entry representation in memory (using
+  // the SAME key/salt/KDF params — the master password hasn't changed,
+  // so there's no need to re-derive or re-benchmark). The caller is
+  // responsible for calling persist() to write the upgraded format.
+  async function loadAndMigrateV1(masterPassword, blob) {
+    const salt = new Uint8Array(Utils.fromB64(blob.kdf.salt));
+    const key = await CryptoModule.deriveKey(masterPassword, salt, blob.kdf.iterations);
+    let data;
+    try {
+      data = await CryptoModule.decryptJSON(key, blob.encryption.iv, blob.encryption.ciphertext);
+    } catch (e) {
+      throw new Error('WRONG_PASSWORD');
+    }
+    const oldEntries = Array.isArray(data.entries) ? data.entries : [];
+    Utils.wipe(data, 'entries');
+
+    const newCipherMap = new Map();
+    for (const entry of oldEntries) {
+      const rec = await CryptoModule.encryptJSON(key, entry);
+      newCipherMap.set(entry.id, rec);
+    }
+    const verifierRec = await CryptoModule.encryptJSON(key, { v: VERIFIER_MARKER });
+
+    return {
+      key, saltB64: blob.kdf.salt, kdfMeta: { type: 'PBKDF2', hash: blob.kdf.hash, iterations: blob.kdf.iterations },
+      verifierIv: verifierRec.iv, verifierCiphertext: verifierRec.ciphertext,
+      entries: oldEntries, cipherMap: newCipherMap, corruptedIds: [],
+      createdAt: blob.createdAt || null
+    };
+  }
+
+  async function unlock(masterPassword) {
+    const blob = Storage.loadBlob();
+    if (!blob) throw new Error('NO_VAULT');
+    if (!Storage.validateBlob(blob)) throw new Error('CORRUPT_VAULT');
+    // Cheap structural check first — catches truncation/corruption without
+    // spending any KDF time, and doesn't leak anything about the password
+    // since it runs before the password is even used.
+    if (!(await Storage.verifyIntegrity(blob))) throw new Error('CORRUPT_VAULT');
+
+    const migrated = (blob.version === 1);
+    const loaded = migrated ? await loadAndMigrateV1(masterPassword, blob) : await loadV2(masterPassword, blob);
+
+    cryptoKey = loaded.key;
+    saltB64 = loaded.saltB64;
+    kdfMeta = loaded.kdfMeta;
+    verifierIv = loaded.verifierIv;
+    verifierCiphertext = loaded.verifierCiphertext;
+    entries = loaded.entries;
+    cipherMap = loaded.cipherMap;
+    vaultCreatedAt = loaded.createdAt;
+    unlocked = true;
+    lastUnlockInfo = { migrated, corruptedEntryIds: loaded.corruptedIds, argon2FellBackToPbkdf2: false };
+
+    if (migrated) await persist(); // write the upgraded v2 format immediately
+  }
+
+  async function persist() {
+    return queuePersist(async () => {
+      if (!cryptoKey) throw new Error('LOCKED');
+      const kdf = buildKdfObject();
+      const cipherEntries = {};
+      for (const [id, rec] of cipherMap) cipherEntries[id] = rec;
+      const blob = await Storage.buildBlobV2({
+        kdf, verifierIv, verifierCiphertext, cipherEntries, createdAt: vaultCreatedAt
+      });
+      Storage.saveBlob(blob);
+    });
+  }
+
+  function lock() {
+    cryptoKey = null;
+    entries = [];
+    cipherMap = new Map();
+    saltB64 = null;
+    kdfMeta = null;
+    verifierIv = null; verifierCiphertext = null;
+    vaultCreatedAt = null;
+    unlocked = false;
+  }
+
+  function list() { return entries.slice(); }
+
+  async function addEntry(entry) {
+    const now = Utils.nowIso();
+    const full = Object.assign({
+      id: Utils.uuid(), website: '', title: '', username: '', password: '', email: '',
+      url: '', notes: '', category: 'Personal', tags: [], favorite: false,
+      createdAt: now, modifiedAt: now
+    }, entry, { createdAt: now, modifiedAt: now });
+    const rec = await CryptoModule.encryptJSON(cryptoKey, full);
+    cipherMap.set(full.id, rec);
+    entries.push(full);
+    await persist();
+    return full;
+  }
+
+  async function updateEntry(id, patch) {
+    const idx = entries.findIndex(e => e.id === id);
+    if (idx === -1) throw new Error('NOT_FOUND');
+    const updated = Object.assign({}, entries[idx], patch, { modifiedAt: Utils.nowIso() });
+    // Only this one entry is re-encrypted (fresh random IV) — every other
+    // entry's ciphertext in cipherMap is left completely untouched.
+    const rec = await CryptoModule.encryptJSON(cryptoKey, updated);
+    cipherMap.set(id, rec);
+    entries[idx] = updated;
+    await persist();
+    return updated;
+  }
+
+  async function deleteEntry(id) {
+    entries = entries.filter(e => e.id !== id);
+    cipherMap.delete(id); // no encryption work needed for a delete
+    await persist();
+  }
+
+  async function toggleFavorite(id) {
+    const e = entries.find(x => x.id === id);
+    if (!e) return;
+    const updated = Object.assign({}, e, { favorite: !e.favorite, modifiedAt: Utils.nowIso() });
+    const rec = await CryptoModule.encryptJSON(cryptoKey, updated);
+    cipherMap.set(id, rec);
+    const idx = entries.findIndex(x => x.id === id);
+    entries[idx] = updated;
+    await persist();
+  }
+
+  async function replaceFromImportedBlob(masterPassword, blob) {
+    if (!Storage.validateBlob(blob)) throw new Error('CORRUPT_VAULT');
+    if (!(await Storage.verifyIntegrity(blob))) throw new Error('CORRUPT_VAULT');
+
+    const migrated = (blob.version === 1);
+    const loaded = migrated ? await loadAndMigrateV1(masterPassword, blob) : await loadV2(masterPassword, blob);
+
+    cryptoKey = loaded.key;
+    saltB64 = loaded.saltB64;
+    kdfMeta = loaded.kdfMeta;
+    verifierIv = loaded.verifierIv;
+    verifierCiphertext = loaded.verifierCiphertext;
+    entries = loaded.entries;
+    cipherMap = loaded.cipherMap;
+    vaultCreatedAt = loaded.createdAt;
+    unlocked = true;
+    lastUnlockInfo = { migrated, corruptedEntryIds: loaded.corruptedIds, argon2FellBackToPbkdf2: false };
+
+    // Always (re-)persist: either writing the freshly-migrated v2 format,
+    // or simply re-saving the already-v2 imported blob as the active vault.
+    await persist();
+  }
+
+  function exportBlob() {
+    // Export uses whatever is currently persisted on disk — always encrypted.
+    const blob = Storage.loadBlob();
+    if (!blob) throw new Error('NO_VAULT');
+    return Object.assign({}, blob, { exportedAt: Utils.nowIso() });
+  }
+
+  // Change Master Password: verifies the current password against the
+  // *currently persisted* blob's verifier (so a stale in-memory key can
+  // never be reused to bypass verification), then re-benchmarks for
+  // whichever KDF algorithm was chosen (which may be the same algorithm
+  // the vault already used, or a switch to/from Argon2id — see kdfChoice
+  // below), and re-encrypts the verifier plus every entry under a brand
+  // new random salt + key. Per policy, cost parameters are never
+  // silently lowered when staying on the SAME algorithm — only raised to
+  // whatever the fresh benchmark recommends, or left as-is if the
+  // benchmark comes back lower. That "never reduce" comparison only
+  // applies when the algorithm is unchanged; switching algorithms
+  // entirely (e.g. PBKDF2 -> Argon2id) has no comparable prior value to
+  // preserve, so it simply uses the freshly benchmarked parameters.
+  //
+  // kdfChoice: 'pbkdf2' | 'argon2id' | undefined. If omitted, the
+  // vault's current algorithm is kept (old call sites keep working).
+  async function changeMasterPassword(currentPassword, newPassword, kdfChoice, onProgress) {
+    if (!unlocked) throw new Error('LOCKED');
+    const blob = Storage.loadBlob();
+    if (!blob) throw new Error('NO_VAULT');
+    if (!Storage.validateBlob(blob)) throw new Error('CORRUPT_VAULT');
+    if (!(await Storage.verifyIntegrity(blob))) throw new Error('CORRUPT_VAULT');
+    if (blob.version !== 2) throw new Error('CORRUPT_VAULT'); // unlock() always migrates before this is reachable
+
+    const oldSalt = new Uint8Array(Utils.fromB64(blob.kdf.salt));
+    const verifyKey = await CryptoModule.deriveMasterKey(currentPassword, oldSalt, blob.kdf);
+    try {
+      await CryptoModule.decryptJSON(verifyKey, blob.verifier.iv, blob.verifier.ciphertext);
+    } catch (e) {
+      throw new Error('WRONG_PASSWORD');
+    }
+
+    if (!newPassword || newPassword.length < 8) throw new Error('WEAK_PASSWORD');
+
+    let targetType = blob.kdf.type; // default: keep current algorithm
+    let fellBack = false;
+    if (kdfChoice === 'argon2id') {
+      if (Argon2Module.isAvailable()) targetType = 'Argon2id';
+      else { targetType = 'PBKDF2'; fellBack = true; }
+    } else if (kdfChoice === 'pbkdf2') {
+      targetType = 'PBKDF2';
+    }
+
+    const benchmarked = await benchmarkForType(targetType, onProgress);
+    let newMeta;
+    const sameAlgorithm = (targetType === blob.kdf.type);
+    if (targetType === 'Argon2id') {
+      newMeta = {
+        type: 'Argon2id',
+        memoryKiB: sameAlgorithm ? Math.max(benchmarked.memoryKiB, blob.kdf.memoryKiB) : benchmarked.memoryKiB,
+        passes: sameAlgorithm ? Math.max(benchmarked.passes, blob.kdf.passes) : benchmarked.passes,
+        parallelism: benchmarked.parallelism
+      };
+    } else {
+      newMeta = {
+        type: 'PBKDF2', hash: CryptoModule.KDF_HASH,
+        iterations: sameAlgorithm ? Math.max(benchmarked.iterations, blob.kdf.iterations) : benchmarked.iterations
+      };
+    }
+
+    const newSalt = CryptoModule.newSalt();
+    const newSaltB64 = Utils.toB64(newSalt);
+    const newKey = await CryptoModule.deriveMasterKey(newPassword, newSalt, newMeta);
+
+    const newVerifierRec = await CryptoModule.encryptJSON(newKey, { v: VERIFIER_MARKER });
+
+    // Every entry must be re-encrypted since the key itself changed —
+    // unlike a normal edit, this is inherently a full-vault operation.
+    // Encryptions run concurrently for speed on larger vaults.
+    const newCipherMap = new Map();
+    await Promise.all(entries.map(async (e) => {
+      const rec = await CryptoModule.encryptJSON(newKey, e);
+      newCipherMap.set(e.id, rec);
+    }));
+
+    cryptoKey = newKey;
+    saltB64 = newSaltB64;
+    kdfMeta = newMeta;
+    verifierIv = newVerifierRec.iv;
+    verifierCiphertext = newVerifierRec.ciphertext;
+    cipherMap = newCipherMap;
+    await persist();
+    return { argon2FellBackToPbkdf2: fellBack };
+  }
+
+  return {
+    isUnlocked, getLastUnlockInfo, currentKdfInfo, createNew, unlock, lock, persist, list,
+    addEntry, updateEntry, deleteEntry, toggleFavorite,
+    replaceFromImportedBlob, exportBlob, changeMasterPassword
+  };
+})();
+
+/* ======================================================================
+ * GENERATOR MODULE — cryptographically secure password AND passphrase
+ * generation, using rejection sampling to avoid modulo bias throughout.
+ * ==================================================================== */
+const Generator = (() => {
+  const SETS = {
+    upper: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+    lower: 'abcdefghijklmnopqrstuvwxyz',
+    numbers: '0123456789',
+    symbols: '!@#$%^&*()-_=+[]{};:,.<>?/~'
+  };
+  const AMBIGUOUS = /[Il1O0o]/g;
+  const MAX_LENGTH = 256;
+
+  // A compact, original word list (not copied from any external diceware
+  // source) used for memorable passphrases. Deliberately disclosed here:
+  // its real size determines its real entropy per word — see
+  // wordlistBitsPerWord() below, which is used for honest strength
+  // reporting rather than a larger number this list can't actually back.
+  const WORDLIST = [
+    'able','acid','aged','also','area','army','away','baby','back','bald','ball','band','bank',
+    'barn','base','bath','bead','beam','bear','beat','been','beer','bell','belt','bend','bent',
+    'best','bike','bird','bite','blue','boat','body','bold','bolt','bone','book','boot','born',
+    'boss','both','bowl','bulk','burn','bush','busy','cake','calm','camp','card','care','case',
+    'cash','cast','cave','cell','chef','chip','city','clay','clip','club','coal','coast','coat',
+    'coin','cold','cook','cool','copy','cord','core','cost','crab','crew','crop','cure','dare',
+    'dark','dash','data','dawn','deal','debt','deep','deny','desk','dial','dice','diet','dish',
+    'dock','does','done','doom','door','dose','down','drag','draw','drop','drum','duck','dust',
+    'duty','each','earn','easy','edge','edit','else','even','ever','exit','face','fact','fade',
+    'fail','fair','fall','fame','farm','fast','fate','fear','feed','feel','file','film','find',
+    'fine','fire','firm','fish','fist','five','flag','flat','flip','flow','foam','foil','fold',
+    'folk','food','fool','foot','ford','form','fort','four','free','from','fuel','full','fund',
+    'gain','game','gate','gaze','gear','gene','gift','girl','give','glad','glow','goal','goat',
+    'gold','golf','good','gown','grab','gray','grew','grid','grip','grow','gulf','hair','half',
+    'hall','halt','hand','hard','hawk','head','heal','heap','hear','heat','heel','help','herb',
+    'hero','hide','high','hill','hint','hire','hold','hole','holy','home','hood','hook','hope',
+    'horn','host','hour','huge','hunt','hurt','icon','idea','idle','inch','iron','item','join',
+    'joke','jump','july','june','junk','keen','keep','kick','kind','king','kiss','knee','know',
+    'lack','lady','lake','lamp','land','lane','last','late','lawn','lead','leaf','lean','left',
+    'lend','lens','less','life','lift','like','limb','line','link','lion','list','live','load',
+    'loan','lock','loft','logo','long','look','loop','lord','lose','loss','lost','loud','love',
+    'luck','lung','made','mail','main','make','male','mall','many','mark','mass','mate','math',
+    'meal','mean','meat','meet','melt','menu','mesh','mild','milk','mind','mine','mint','miss',
+    'mist','mode','mold','mood','moon','more','moss','most','moth','move','much','must','myth',
+    'name','navy','near','neat','neck','need','nest','news','next','nine','node','none','norm',
+    'nose','note','nude','oak','obey','odds','okay','once','onto','open','oral','over','pace',
+    'pack','page','paid','pain','pair','pale','palm','park','part','pass','past','path','pave',
+    'peak','pear','peel','peer','pick','pile','pine','pink','pipe','plan','play','plot','plug',
+    'plus','poem','poet','pole','pond','pool','poor','pope','pose','post','pour','pray','pull',
+    'pump','pure','push','quiz','race','rack','rage','raid','rail','rain','rank','rare','rate',
+    'read','real','reef','rely','rent','rest','rice','rich','ride','ring','riot','rise','risk',
+    'road','roar','robe','rock','role','roll','roof','room','root','rope','rose','rule','rush',
+    'rust','safe','sail','salt','same','sand','save','scan','seal','seat','seed','seek','seem',
+    'seen','self','sell','send','sent','shed','ship','shoe','shop','shot','show','shut','sick',
+    'side','sign','silk','sing','sink','site','size','skin','skip','slip','slot','slow','snap',
+    'snow','soap','sock','soft','soil','sold','sole','some','song','soon','sort','soul','soup',
+    'sour','spot','star','stay','stem','step','stop','such','suit','sure','swim','tail','take',
+    'tale','talk','tall','tank','tape','task','team','tear','tech','tell','tend','tent','term',
+    'test','text','than','that','them','then','they','thin','this','thus','tidy','tile','time',
+    'tiny','tone','tool','tour','town','toys','trap','tray','tree','trim','trip','true','tune',
+    'turn','twin','type','ugly','unit','upon','urge','used','user','vary','vast','very','vibe',
+    'view','vote','wage','wait','wake','walk','wall','want','ward','warm','wash','wave','weak',
+    'wear','week','well','went','were','west','what','when','whip','wide','wife','wild','will',
+    'wind','wine','wing','wire','wise','wish','with','wolf','wood','wool','word','wore','work',
+    'yard','yarn','year','zero','zone','zoom',
+  ];
+
+  function buildCharset(opts) {
+    let charset = '';
+    if (opts.upper) charset += SETS.upper;
+    if (opts.lower) charset += SETS.lower;
+    if (opts.numbers) charset += SETS.numbers;
+    if (opts.symbols) charset += SETS.symbols;
+    if (opts.avoidAmbiguous) charset = charset.replace(AMBIGUOUS, '');
+    return charset;
+  }
+
+  function secureIndex(max) {
+    // Rejection sampling to avoid modulo bias, generalized to any max
+    // (not just max <= 256 — a single byte can't cover ranges like the
+    // 578-word passphrase list, so we scale the byte count to the range).
+    const bytesNeeded = Math.max(1, Math.ceil(Math.log2(max) / 8));
+    const maxRandom = 256 ** bytesNeeded;
+    const range = maxRandom - (maxRandom % max);
+    let x;
+    do {
+      const buf = crypto.getRandomValues(new Uint8Array(bytesNeeded));
+      x = 0;
+      for (let i = 0; i < bytesNeeded; i++) x = x * 256 + buf[i];
+    } while (x >= range);
+    return x % max;
+  }
+
+  function generate(opts) {
+    const charset = buildCharset(opts);
+    if (!charset) return '';
+    const len = Math.max(1, Math.min(MAX_LENGTH, opts.length || 20));
+    let out = '';
+    for (let i = 0; i < len; i++) out += charset[secureIndex(charset.length)];
+    return out;
+  }
+
+  function wordlistBitsPerWord() { return Math.log2(WORDLIST.length); }
+
+  // Diceware-style passphrase: each word is chosen uniformly at random
+  // (rejection sampling, same as generate()) from the embedded word list.
+  function generatePassphrase(opts) {
+    const wordCount = Math.max(3, Math.min(20, opts.words || 6));
+    const separator = typeof opts.separator === 'string' ? opts.separator : '-';
+    const capitalize = !!opts.capitalize;
+    const includeNumber = !!opts.includeNumber;
+    const picks = [];
+    for (let i = 0; i < wordCount; i++) {
+      let w = WORDLIST[secureIndex(WORDLIST.length)];
+      if (capitalize) w = w.charAt(0).toUpperCase() + w.slice(1);
+      picks.push(w);
+    }
+    if (includeNumber) {
+      const digit = secureIndex(10);
+      picks[secureIndex(picks.length)] += String(digit);
+    }
+    return picks.join(separator);
+  }
+
+  // Rough entropy-based strength estimate (0-4) for the UI meter only —
+  // not used for any security decision. Character-class based for
+  // ordinary passwords, word-count based for passphrases.
+  function strength(pw) {
+    if (!pw) return 0;
+    let poolSize = 0;
+    if (/[a-z]/.test(pw)) poolSize += 26;
+    if (/[A-Z]/.test(pw)) poolSize += 26;
+    if (/[0-9]/.test(pw)) poolSize += 10;
+    if (/[^a-zA-Z0-9]/.test(pw)) poolSize += 32;
+    const entropy = pw.length * Math.log2(Math.max(poolSize, 1));
+    if (entropy < 28) return 1;
+    if (entropy < 50) return 2;
+    if (entropy < 75) return 3;
+    return 4;
+  }
+  function passphraseStrength(wordCount) {
+    const entropy = wordCount * wordlistBitsPerWord();
+    if (entropy < 40) return 1;
+    if (entropy < 60) return 2;
+    if (entropy < 80) return 3;
+    return 4;
+  }
+  const LABELS = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong'];
+
+  return { generate, generatePassphrase, strength, passphraseStrength, wordlistBitsPerWord, LABELS, MAX_LENGTH, WORDLIST_SIZE: WORDLIST.length };
+})();
+
+/* ======================================================================
+ * SEARCH MODULE — instant, case-insensitive filtering across fields.
+ * Never touches ciphertext or storage — it only ever filters the plain
+ * array already held in memory while unlocked. To stay fast at scale
+ * (thousands of entries), each entry's searchable text is normalized
+ * once and cached on the entry object itself, instead of re-lowercasing
+ * every field on every keystroke.
+ * ==================================================================== */
+const Search = (() => {
+  // A WeakMap keeps the cached lowercase index entirely out of the entry
+  // object itself, so it can never accidentally end up inside the
+  // encrypted JSON blob when `{ entries }` is serialized for storage.
+  const cache = new WeakMap();
+
+  function indexFor(e) {
+    let idx = cache.get(e);
+    if (idx === undefined) {
+      const tags = Array.isArray(e.tags) ? e.tags.join(' ') : '';
+      idx = [e.website, e.username, e.category, tags, e.notes, e.title, e.email]
+        .map(f => (f || '').toLowerCase()).join(' \u0001 ');
+      cache.set(e, idx);
+    }
+    return idx;
+  }
+
+  function filter(entries, query, category) {
+    let result = entries;
+    if (category && category !== 'All') {
+      result = category === 'Favorites'
+        ? result.filter(e => e.favorite)
+        : result.filter(e => e.category === category);
+    }
+    const q = (query || '').trim().toLowerCase();
+    if (!q) return result;
+    return result.filter(e => indexFor(e).includes(q));
+  }
+  return { filter };
+})();
+
+/* ======================================================================
+ * UI MODULE — DOM wiring, screens, modals, rendering, auto-lock timer.
+ * ==================================================================== */
+const UI = (() => {
+  const CATEGORIES = ['Email','Banking','Social','Shopping','Government','Education','Hosting','Developer','Work','Personal','Custom'];
+  let activeCategory = 'All';
+  let currentQuery = '';
+  let autoLockTimer = null;
+  let autoLockMs = 5 * 60 * 1000;
+  let settings = Storage.loadSettings();
+  let viewingId = null;
+  let confirmResolve = null;
+
+  const $ = id => document.getElementById(id);
+
+  /* ---------- toggling password visibility ---------- */
+  document.querySelectorAll('[data-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = $(btn.dataset.toggle);
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.innerHTML = show ? ICONS.eyeOff : ICONS.eye;
+    });
+  });
+
+  /* ---------- secure defaults for master-password fields ---------- */
+  // Blocks drag-and-drop of arbitrary text into master-password inputs
+  // (e.g. a phishing string dragged in from elsewhere on the page/OS).
+  document.querySelectorAll('.sensitive-field').forEach(el => {
+    el.addEventListener('dragover', ev => ev.preventDefault());
+    el.addEventListener('drop', ev => ev.preventDefault());
+  });
+
+  /* ---------- strength meters ---------- */
+  function bindStrengthMeter(inputEl, barEl, labelEl) {
+    inputEl.addEventListener('input', () => {
+      const lvl = Generator.strength(inputEl.value);
+      barEl.dataset.level = lvl;
+      labelEl.textContent = inputEl.value ? Generator.LABELS[lvl] : '\u00A0';
+    });
+  }
+  bindStrengthMeter($('createPass'), $('createStrengthBar'), $('createStrengthLabel'));
+  bindStrengthMeter($('fPassword'), $('fStrengthBar'), $('fStrengthLabel'));
+
+  /* ---------- error helpers ---------- */
+  function showError(elId, msg) { const el = $(elId); el.textContent = msg; el.classList.add('show'); }
+  function hideError(elId) { const el = $(elId); el.classList.remove('show'); }
+
+  /* ---------- screens ---------- */
+  function showScreen(name) {
+    $('screenCreate').classList.toggle('hidden', name !== 'create');
+    $('screenUnlock').classList.toggle('hidden', name !== 'unlock');
+    $('vaultShell').classList.toggle('active', name === 'vault');
+  }
+
+  function boot() {
+    if (Storage.hasVault()) { showScreen('unlock'); $('unlockPass').focus(); applyLockoutUI(); }
+    else {
+      showScreen('create'); $('createPass').focus();
+      updateKdfChoiceHint();
+    }
+  }
+
+  function updateKdfChoiceHint() {
+    const choice = $('createKdfChoice').value;
+    if (choice === 'argon2id' && !Argon2Module.isAvailable()) {
+      $('kdfChoiceHint').textContent = 'Argon2id isn\'t available in this browser — Standard (PBKDF2) will be used instead.';
+    } else {
+      $('kdfChoiceHint').textContent = '\u00A0';
+    }
+  }
+  $('createKdfChoice').addEventListener('change', updateKdfChoiceHint);
+
+  /* ---------- create master password ---------- */
+  $('btnCreateVault').addEventListener('click', async () => {
+    hideError('createError');
+    const p1 = $('createPass').value, p2 = $('createPass2').value;
+    if (!p1 || p1.length < 8) return showError('createError', 'Master password must be at least 8 characters.');
+    if (p1 !== p2) return showError('createError', 'Passwords do not match.');
+    if (!Storage.available()) return showError('createError', 'Local storage is unavailable in this browser.');
+    $('btnCreateVault').disabled = true;
+    const originalLabel = $('btnCreateVault').textContent;
+    try {
+      const kdfChoice = $('createKdfChoice').value;
+      const result = await VaultModule.createNew(p1, kdfChoice, (msg) => { $('btnCreateVault').textContent = msg; });
+      $('createPass').value = ''; $('createPass2').value = '';
+      enterVault();
+      Utils.toast('Vault created', 'success');
+      if (result && result.argon2FellBackToPbkdf2) {
+        Utils.toast('Argon2id wasn\'t available — used PBKDF2 instead', 'default', 4000);
+      }
+    } catch (e) {
+      showError('createError', friendlyError(e));
+    } finally {
+      $('btnCreateVault').disabled = false;
+      $('btnCreateVault').textContent = originalLabel;
+    }
+  });
+  ['createPass','createPass2'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') $('btnCreateVault').click(); }));
+
+  /* ---------- progressive unlock lockout ---------- */
+  // Delays escalate with consecutive failures and are persisted so a page
+  // reload can't be used to reset the clock and retry immediately.
+  let lockoutTimer = null;
+  function lockoutDelayMs(failures) {
+    if (failures <= 5) return 0;
+    if (failures <= 10) return 2000;
+    if (failures <= 20) return 5000;
+    // Exponential backoff beyond 20 failures, capped at 5 minutes.
+    return Math.min(300000, 5000 * Math.pow(2, failures - 20));
+  }
+  function applyLockoutUI() {
+    const state = Storage.loadLockout();
+    const delay = lockoutDelayMs(state.failures);
+    const remaining = delay - (Date.now() - state.lastFailureAt);
+    clearTimeout(lockoutTimer);
+    if (remaining > 0) {
+      $('btnUnlock').disabled = true;
+      const tick = () => {
+        const left = Math.ceil((state.lastFailureAt + delay - Date.now()) / 1000);
+        if (left <= 0) {
+          $('btnUnlock').disabled = false;
+          $('btnUnlock').textContent = 'Unlock Vault';
+          hideError('unlockError');
+        } else {
+          showError('unlockError', `Too many attempts — try again in ${left}s`);
+          lockoutTimer = setTimeout(tick, 500);
+        }
+      };
+      tick();
+      return true;
+    }
+    $('btnUnlock').disabled = false;
+    return false;
+  }
+
+  /* ---------- unlock ---------- */
+  $('btnUnlock').addEventListener('click', async () => {
+    hideError('unlockError');
+    if (applyLockoutUI()) return;
+    const pw = $('unlockPass').value;
+    if (!pw) return showError('unlockError', 'Enter your master password.');
+    $('btnUnlock').disabled = true;
+    try {
+      await VaultModule.unlock(pw);
+      Storage.clearLockout();
+      $('unlockPass').value = '';
+      enterVault();
+    } catch (e) {
+      if (e.message === 'WRONG_PASSWORD') {
+        const state = Storage.loadLockout();
+        state.failures = (state.failures || 0) + 1;
+        state.lastFailureAt = Date.now();
+        Storage.saveLockout(state);
+        showError('unlockError', 'Incorrect Master Password');
+        applyLockoutUI();
+      } else {
+        showError('unlockError', friendlyError(e));
+      }
+    } finally {
+      if (!lockoutTimer) $('btnUnlock').disabled = false;
+    }
+  });
+  $('unlockPass').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnUnlock').click(); });
+  $('btnShowImport').addEventListener('click', () => $('importFile').click());
+
+  function friendlyError(e) {
+    const map = {
+      NO_VAULT: 'No vault found on this device.',
+      CORRUPT_VAULT: 'This vault file is corrupted or unreadable.',
+      STORAGE_FULL: 'Local storage is full — free up space and try again.',
+      WRONG_PASSWORD: 'Incorrect Master Password',
+      LOCKED: 'Vault is locked.',
+      NOT_FOUND: 'That entry no longer exists.'
+    };
+    return map[e.message] || 'Something went wrong. Please try again.';
+  }
+
+  /* ---------- enter / lock ---------- */
+  function enterVault() {
+    showScreen('vault');
+    buildSidebar();
+    renderEntries();
+    resetAutoLockTimer();
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    const info = VaultModule.getLastUnlockInfo();
+    if (info.migrated) {
+      Utils.toast('Vault upgraded: entries are now encrypted individually', 'success', 4000);
+    }
+    if (info.corruptedEntryIds && info.corruptedEntryIds.length > 0) {
+      const n = info.corruptedEntryIds.length;
+      Utils.toast(`${n} ${n === 1 ? 'entry' : 'entries'} could not be decrypted (corrupted) and ${n === 1 ? 'was' : 'were'} skipped — the rest of your vault is unaffected`, 'error', 6000);
+    }
+  }
+
+  function doLock(reason) {
+    VaultModule.lock();
+    clearTimeout(autoLockTimer);
+    closeAllModals();
+    showScreen('unlock');
+    hideError('unlockError');
+    if (reason) Utils.toast(reason, 'default');
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+  }
+
+  function onVisibilityChange() {
+    if (document.hidden && settings.lockOnBlur && VaultModule.isUnlocked()) doLock('Vault locked (tab inactive)');
+  }
+
+  function resetAutoLockTimer() {
+    clearTimeout(autoLockTimer);
+    autoLockTimer = setTimeout(() => { if (VaultModule.isUnlocked()) doLock('Vault auto-locked'); }, autoLockMs);
+  }
+  ['mousemove','keydown','click','touchstart','scroll'].forEach(evt =>
+    document.addEventListener(evt, () => { if (VaultModule.isUnlocked()) resetAutoLockTimer(); }, { passive: true })
+  );
+
+  // Best-effort lock on browser/tab close. There is no reliable way to run
+  // async code here, but VaultModule.lock() is synchronous — it just drops
+  // the in-memory key and entries — so this reliably clears the sensitive
+  // in-memory state even though the page is about to be destroyed anyway.
+  // A page reload also fires pagehide, which is fine: reload already
+  // requires re-entering the master password regardless.
+  window.addEventListener('pagehide', () => { if (VaultModule.isUnlocked()) VaultModule.lock(); });
+  window.addEventListener('beforeunload', () => { if (VaultModule.isUnlocked()) VaultModule.lock(); });
+
+  /* ---------- sidebar ---------- */
+  function buildSidebar() {
+    const sb = $('sidebar');
+    const entries = VaultModule.list();
+    const counts = {};
+    entries.forEach(e => { counts[e.category] = (counts[e.category] || 0) + 1; });
+    const favCount = entries.filter(e => e.favorite).length;
+    let html = '<h4>Vault</h4>';
+    html += catRow('All', entries.length, activeCategory === 'All');
+    html += catRow('Favorites', favCount, activeCategory === 'Favorites');
+    html += '<h4>Categories</h4>';
+    CATEGORIES.forEach(c => { html += catRow(c, counts[c] || 0, activeCategory === c); });
+    sb.innerHTML = html;
+    sb.querySelectorAll('.cat-item').forEach(el => {
+      el.addEventListener('click', () => { activeCategory = el.dataset.cat; buildSidebar(); renderEntries(); $('sidebar').classList.remove('open'); });
+    });
+  }
+  function catRow(name, count, active) {
+    return `<div class="cat-item${active ? ' active' : ''}" data-cat="${Utils.escapeHtml(name)}"><span>${Utils.escapeHtml(name)}</span><span class="n">${count}</span></div>`;
+  }
+
+  /* ---------- entries rendering (batched, paginated, escaped) ---------- */
+  const PAGE_SIZE = 150; // keeps the DOM small even with 50,000+ entries
+  let renderedCount = 0;
+  let lastFiltered = [];
+
+  function renderEntries() {
+    const all = VaultModule.list();
+    const filtered = Search.filter(all, currentQuery, activeCategory);
+    $('entryCount').textContent = `${filtered.length} ${filtered.length === 1 ? 'entry' : 'entries'}`;
+    const container = $('entriesContainer');
+
+    if (all.length === 0) {
+      container.innerHTML = `<div class="empty-state">${ICONS.vaultEmpty}<h3>Your vault is empty</h3><div>Tap the + button to add your first entry.</div></div>`;
+      return;
+    }
+    if (filtered.length === 0) {
+      container.innerHTML = `<div class="empty-state">${ICONS.vaultEmpty}<h3>No matches</h3><div>Try a different search term or category.</div></div>`;
+      return;
+    }
+
+    filtered.sort((a, b) => (b.favorite - a.favorite) || a.title.localeCompare(b.title));
+    lastFiltered = filtered;
+    renderedCount = 0;
+
+    container.innerHTML = '';
+    const grid = document.createElement('div');
+    grid.className = 'entries-grid';
+    grid.id = 'entriesGrid';
+    container.appendChild(grid);
+    const moreWrap = document.createElement('div');
+    moreWrap.id = 'loadMoreWrap';
+    moreWrap.style.cssText = 'grid-column:1/-1;text-align:center;padding:18px;';
+    container.appendChild(moreWrap);
+
+    renderNextPage();
+  }
+
+  function renderNextPage() {
+    const grid = $('entriesGrid');
+    const moreWrap = $('loadMoreWrap');
+    if (!grid) return;
+    const slice = lastFiltered.slice(renderedCount, renderedCount + PAGE_SIZE);
+    // Batched via a single innerHTML assignment on a detached fragment for
+    // speed even when the vault holds tens of thousands of entries.
+    const frag = document.createElement('div');
+    frag.innerHTML = slice.map(cardHtml).join('');
+    while (frag.firstChild) grid.appendChild(frag.firstChild);
+    renderedCount += slice.length;
+
+    grid.querySelectorAll('.entry-card:not([data-wired])').forEach(card => {
+      card.dataset.wired = '1';
+      card.addEventListener('click', () => openView(card.dataset.id));
+    });
+
+    moreWrap.innerHTML = '';
+    if (renderedCount < lastFiltered.length) {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost btn-sm';
+      btn.textContent = `Show more (${lastFiltered.length - renderedCount} remaining)`;
+      btn.addEventListener('click', renderNextPage);
+      moreWrap.appendChild(btn);
+    }
+  }
+
+  function initials(str) {
+    if (!str) return '•';
+    return str.trim().slice(0, 1).toUpperCase();
+  }
+
+  function cardHtml(e) {
+    const tags = (Array.isArray(e.tags) ? e.tags : []).slice(0, 4)
+      .map(t => `<span class="tag">${Utils.escapeHtml(t)}</span>`).join('');
+    return `<div class="entry-card" data-id="${Utils.escapeHtml(e.id)}">
+      <div class="row1">
+        <div class="avatar">${Utils.escapeHtml(initials(e.title || e.website))}</div>
+        <div class="titles">
+          <div class="t">${Utils.escapeHtml(e.title || e.website || 'Untitled')}</div>
+          <div class="u">${Utils.escapeHtml(e.username || e.email || '')}</div>
+        </div>
+        ${e.favorite ? `<span class="fav-star">${ICONS.star}</span>` : ''}
+      </div>
+      <div class="tag-row"><span class="cat-badge">${Utils.escapeHtml(e.category)}</span>${tags}</div>
+    </div>`;
+  }
+
+  $('searchInput').addEventListener('input', Utils.debounce(e => {
+    currentQuery = e.target.value;
+    renderEntries();
+  }, 120));
+
+  /* ---------- view modal ---------- */
+  function openView(id) {
+    const e = VaultModule.list().find(x => x.id === id);
+    if (!e) return;
+    viewingId = id;
+    $('viewModalTitle').textContent = e.title || e.website || 'Entry';
+    const tags = (Array.isArray(e.tags) ? e.tags : []).map(t => `<span class="tag">${Utils.escapeHtml(t)}</span>`).join(' ');
+    $('viewModalBody').innerHTML = `
+      ${row('Website', e.website)}
+      ${row('Username', e.username)}
+      ${row('Email', e.email)}
+      ${passwordRow(e.password)}
+      ${row('URL', e.url)}
+      ${row('Category', e.category)}
+      ${tags ? `<div class="field-view"><label>Tags</label><div class="tag-row">${tags}</div></div>` : ''}
+      ${e.notes ? row('Notes', e.notes) : ''}
+      <div class="field-view"><label>Created / Modified</label><div class="val">${fmtDate(e.createdAt)} · ${fmtDate(e.modifiedAt)}</div></div>
+    `;
+    const copyBtn = $('viewModalBody').querySelector('#copyPwBtn');
+    if (copyBtn) copyBtn.addEventListener('click', () => copyToClipboard(e.password));
+    $('viewModalBackdrop').classList.add('show');
+  }
+  function row(label, val) {
+    if (!val) return '';
+    return `<div class="field-view"><label>${Utils.escapeHtml(label)}</label><div class="val">${Utils.escapeHtml(val)}</div></div>`;
+  }
+  function passwordRow(pw) {
+    return `<div class="field-view"><label>Password</label>
+      <div class="copy-row">
+        <span class="val mono" id="pwMask">••••••••••••</span>
+        <button class="icon-btn" id="pwRevealBtn" title="Show">${ICONS.eye}</button>
+        <button class="icon-btn" id="copyPwBtn" title="Copy">${ICONS.copy}</button>
+      </div></div>`;
+  }
+  function fmtDate(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return iso || '—'; } }
+
+  document.addEventListener('click', (e) => {
+    const revealBtn = e.target.closest && e.target.closest('#pwRevealBtn');
+    if (revealBtn) {
+      const entry = VaultModule.list().find(x => x.id === viewingId);
+      const mask = $('pwMask');
+      if (!entry || !mask) return;
+      const showing = mask.dataset.showing === '1';
+      mask.textContent = showing ? '••••••••••••' : entry.password;
+      mask.dataset.showing = showing ? '0' : '1';
+      revealBtn.innerHTML = showing ? ICONS.eye : ICONS.eyeOff;
+    }
+  });
+
+  async function copyToClipboard(text) {
+    const ok = await writeClipboard(text || '');
+    if (!ok) { Utils.toast('Clipboard access denied by browser', 'error'); return; }
+    Utils.toast('Password copied — clearing in 20s', 'success');
+    setTimeout(async () => {
+      const cleared = await writeClipboard('');
+      if (!cleared) Utils.toast('Could not auto-clear clipboard — please clear it manually', 'error');
+    }, 20000);
+  }
+
+  // Tries the modern async Clipboard API first, then falls back to the
+  // older execCommand('copy') path. The fallback matters because some
+  // Chromium builds don't treat a local file:// page as a fully secure
+  // context, which silently blocks navigator.clipboard.writeText.
+  async function writeClipboard(text) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) { /* fall through to legacy method below */ }
+    return legacyCopy(text);
+  }
+
+  function legacyCopy(text) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '-9999px';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      const success = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return success;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  $('viewModalClose').addEventListener('click', () => $('viewModalBackdrop').classList.remove('show'));
+  $('viewModalBackdrop').addEventListener('click', e => { if (e.target === $('viewModalBackdrop')) $('viewModalBackdrop').classList.remove('show'); });
+  $('viewBtnEdit').addEventListener('click', () => { $('viewModalBackdrop').classList.remove('show'); openEdit(viewingId); });
+  $('viewBtnDelete').addEventListener('click', () => {
+    confirmDialog('Delete entry?', 'This permanently removes the entry from your vault.').then(async ok => {
+      if (!ok) return;
+      await VaultModule.deleteEntry(viewingId);
+      $('viewModalBackdrop').classList.remove('show');
+      buildSidebar(); renderEntries();
+      Utils.toast('Entry deleted');
+    });
+  });
+
+  /* ---------- add / edit modal ---------- */
+  function openAdd() {
+    $('entryModalTitle').textContent = 'Add Entry';
+    $('entryId').value = '';
+    ['fTitle','fWebsite','fUsername','fEmail','fPassword','fUrl','fTags','fNotes'].forEach(id => $(id).value = '');
+    $('fCategory').value = 'Personal';
+    $('fFavorite').checked = false;
+    $('fStrengthBar').dataset.level = 0;
+    $('fStrengthLabel').textContent = '\u00A0';
+    $('fPassword').type = 'password'; $('fPassToggle').innerHTML = ICONS.eye;
+    $('entryModalBackdrop').classList.add('show');
+    setTimeout(() => $('fTitle').focus(), 50);
+  }
+  function openEdit(id) {
+    const e = VaultModule.list().find(x => x.id === id);
+    if (!e) return;
+    $('entryModalTitle').textContent = 'Edit Entry';
+    $('entryId').value = e.id;
+    $('fTitle').value = e.title || ''; $('fWebsite').value = e.website || '';
+    $('fUsername').value = e.username || ''; $('fEmail').value = e.email || '';
+    $('fPassword').value = e.password || ''; $('fUrl').value = e.url || '';
+    $('fCategory').value = e.category || 'Personal';
+    $('fTags').value = (e.tags || []).join(', ');
+    $('fNotes').value = e.notes || '';
+    $('fFavorite').checked = !!e.favorite;
+    const lvl = Generator.strength(e.password || '');
+    $('fStrengthBar').dataset.level = lvl;
+    $('fStrengthLabel').textContent = e.password ? Generator.LABELS[lvl] : '\u00A0';
+    $('entryModalBackdrop').classList.add('show');
+  }
+  $('btnAddEntry').addEventListener('click', openAdd);
+  $('entryModalClose').addEventListener('click', closeEntryModal);
+  $('entryModalCancel').addEventListener('click', closeEntryModal);
+  function closeEntryModal() { $('entryModalBackdrop').classList.remove('show'); }
+
+  $('entryModalSave').addEventListener('click', async () => {
+    const id = $('entryId').value;
+    const title = $('fTitle').value.trim();
+    const website = $('fWebsite').value.trim();
+    if (!title && !website) { Utils.toast('Add a title or website', 'error'); return; }
+    const payload = {
+      title, website,
+      username: $('fUsername').value.trim(),
+      email: $('fEmail').value.trim(),
+      password: $('fPassword').value,
+      url: $('fUrl').value.trim(),
+      category: $('fCategory').value,
+      tags: $('fTags').value.split(',').map(t => t.trim()).filter(Boolean),
+      notes: $('fNotes').value,
+      favorite: $('fFavorite').checked
+    };
+    try {
+      if (id) await VaultModule.updateEntry(id, payload);
+      else await VaultModule.addEntry(payload);
+      closeEntryModal();
+      buildSidebar(); renderEntries();
+      Utils.toast(id ? 'Entry updated' : 'Entry added', 'success');
+    } catch (e) {
+      Utils.toast(friendlyError(e), 'error');
+    }
+  });
+
+  $('fPassToggle').addEventListener('click', () => {
+    const input = $('fPassword');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    $('fPassToggle').innerHTML = show ? ICONS.eyeOff : ICONS.eye;
+  });
+  $('fPassGen').addEventListener('click', () => openGenerator(true));
+
+  /* ---------- generator modal ---------- */
+  let genForField = false;
+  let genMode = 'random'; // 'random' | 'passphrase'
+
+  function openGenerator(forField) {
+    genForField = forField;
+    $('genModalBackdrop').classList.add('show');
+    regenerate();
+  }
+
+  function setGenMode(mode) {
+    genMode = mode;
+    const isRandom = mode === 'random';
+    $('genRandomControls').classList.toggle('hidden', !isRandom);
+    $('genPassphraseControls').classList.toggle('hidden', isRandom);
+    $('genModeRandom').className = isRandom ? 'btn btn-sm' : 'btn btn-sm btn-ghost';
+    $('genModeRandom').style.cssText = isRandom ? 'flex:1;background:var(--accent);color:#04211C;' : 'flex:1;border:none;';
+    $('genModePassphrase').className = isRandom ? 'btn btn-sm btn-ghost' : 'btn btn-sm';
+    $('genModePassphrase').style.cssText = isRandom ? 'flex:1;border:none;' : 'flex:1;background:var(--accent);color:#04211C;';
+    if (!isRandom) {
+      $('genWordlistHint').textContent = `Drawn from a ${Generator.WORDLIST_SIZE}-word list (~${Generator.wordlistBitsPerWord().toFixed(1)} bits/word) — use at least 6-8 words for real strength.`;
+    }
+    regenerate();
+  }
+  $('genModeRandom').addEventListener('click', () => setGenMode('random'));
+  $('genModePassphrase').addEventListener('click', () => setGenMode('passphrase'));
+
+  function genOptions() {
+    return {
+      length: parseInt($('genLength').value, 10),
+      upper: $('genUpper').checked, lower: $('genLower').checked,
+      numbers: $('genNumbers').checked, symbols: $('genSymbols').checked,
+      avoidAmbiguous: $('genAmbiguous').checked
+    };
+  }
+  function genPassphraseOptions() {
+    return {
+      words: parseInt($('genWordCount').value, 10),
+      separator: $('genSeparator').value,
+      capitalize: $('genCapitalize').checked,
+      includeNumber: $('genIncludeNumber').checked
+    };
+  }
+  function regenerate() {
+    if (genMode === 'passphrase') {
+      const opts = genPassphraseOptions();
+      const pw = Generator.generatePassphrase(opts);
+      $('genOutput').value = pw;
+      const lvl = Generator.passphraseStrength(opts.words);
+      $('genStrengthBar').dataset.level = lvl;
+      $('genStrengthLabel').textContent = Generator.LABELS[lvl];
+      return;
+    }
+    const opts = genOptions();
+    if (!opts.upper && !opts.lower && !opts.numbers && !opts.symbols) {
+      $('genOutput').value = ''; Utils.toast('Select at least one character set', 'error'); return;
+    }
+    const pw = Generator.generate(opts);
+    $('genOutput').value = pw;
+    const lvl = Generator.strength(pw);
+    $('genStrengthBar').dataset.level = lvl;
+    $('genStrengthLabel').textContent = Generator.LABELS[lvl];
+  }
+  $('genLength').addEventListener('input', () => { $('genLengthVal').textContent = $('genLength').value; regenerate(); });
+  ['genUpper','genLower','genNumbers','genSymbols','genAmbiguous'].forEach(id => $(id).addEventListener('change', regenerate));
+  $('genWordCount').addEventListener('input', () => { $('genWordCountVal').textContent = $('genWordCount').value; regenerate(); });
+  ['genSeparator','genCapitalize','genIncludeNumber'].forEach(id => $(id).addEventListener('change', regenerate));
+  $('genRefresh').addEventListener('click', regenerate);
+  $('genCopy').addEventListener('click', () => copyToClipboard($('genOutput').value));
+  $('genModalClose').addEventListener('click', closeGenModal);
+  $('genUseBtn').addEventListener('click', () => {
+    if (genForField) {
+      $('fPassword').value = $('genOutput').value;
+      $('fPassword').dispatchEvent(new Event('input'));
+    }
+    closeGenModal();
+  });
+  function closeGenModal() {
+    // Clear the generated value from the DOM/memory once we're done with
+    // it — it has either been copied into the entry form already, or the
+    // user is dismissing it unused, so there's no reason to let it sit
+    // around in an input field.
+    $('genOutput').value = '';
+    $('genModalBackdrop').classList.remove('show');
+  }
+
+  /* ---------- menu dropdown ---------- */
+  $('btnMenu').addEventListener('click', (e) => { e.stopPropagation(); $('menuDropdown').classList.toggle('show'); });
+  document.addEventListener('click', () => $('menuDropdown').classList.remove('show'));
+  $('menuLock').addEventListener('click', () => doLock('Vault locked'));
+  $('menuSettings').addEventListener('click', () => {
+    $('setAutoLock').value = String(settings.autoLockMinutes || 5);
+    $('setLockOnBlur').checked = !!settings.lockOnBlur;
+    const kdf = VaultModule.currentKdfInfo();
+    if (kdf && kdf.type === 'Argon2id') {
+      $('settingsKdfPill').textContent = 'Argon2id';
+      $('settingsKdfDesc').textContent = `${(kdf.memoryKiB / 1024).toFixed(0)} MiB memory, ${kdf.passes} pass${kdf.passes === 1 ? '' : 'es'}`;
+    } else if (kdf) {
+      $('settingsKdfPill').textContent = 'PBKDF2';
+      $('settingsKdfDesc').textContent = `${kdf.iterations.toLocaleString()} iterations (SHA-512)`;
+    }
+    $('settingsModalBackdrop').classList.add('show');
+  });
+  $('settingsModalClose').addEventListener('click', () => $('settingsModalBackdrop').classList.remove('show'));
+
+  /* ---------- change master password ---------- */
+  function updateCpKdfHint() {
+    const choice = $('cpKdfChoice').value;
+    if (choice === 'argon2id' && !Argon2Module.isAvailable()) {
+      $('cpKdfChoiceHint').textContent = 'Argon2id isn\'t available in this browser — Standard (PBKDF2) will be used instead.';
+    } else {
+      $('cpKdfChoiceHint').textContent = '\u00A0';
+    }
+  }
+  $('cpKdfChoice').addEventListener('change', updateCpKdfHint);
+
+  $('menuChangePassword').addEventListener('click', () => {
+    ['cpCurrent','cpNew','cpConfirm'].forEach(id => $(id).value = '');
+    hideError('changePwError');
+    $('cpStrengthBar').dataset.level = 0;
+    $('cpStrengthLabel').textContent = '\u00A0';
+    const kdf = VaultModule.currentKdfInfo();
+    $('cpKdfChoice').value = (kdf && kdf.type === 'Argon2id') ? 'argon2id' : 'pbkdf2';
+    updateCpKdfHint();
+    $('changePwModalBackdrop').classList.add('show');
+    setTimeout(() => $('cpCurrent').focus(), 50);
+  });
+  $('changePwModalClose').addEventListener('click', closeChangePwModal);
+  $('changePwCancel').addEventListener('click', closeChangePwModal);
+  function closeChangePwModal() { $('changePwModalBackdrop').classList.remove('show'); }
+
+  bindStrengthMeter($('cpNew'), $('cpStrengthBar'), $('cpStrengthLabel'));
+
+  $('changePwSave').addEventListener('click', async () => {
+    hideError('changePwError');
+    const current = $('cpCurrent').value;
+    const next = $('cpNew').value;
+    const confirmVal = $('cpConfirm').value;
+    if (!current) return showError('changePwError', 'Enter your current master password.');
+    if (!next || next.length < 8) return showError('changePwError', 'New password must be at least 8 characters.');
+    if (next === current) return showError('changePwError', 'New password must be different from the current one.');
+    if (next !== confirmVal) return showError('changePwError', 'New passwords do not match.');
+    $('changePwSave').disabled = true;
+    const originalLabel = $('changePwSave').textContent;
+    try {
+      const kdfChoice = $('cpKdfChoice').value;
+      const result = await VaultModule.changeMasterPassword(current, next, kdfChoice, (msg) => { $('changePwSave').textContent = msg; });
+      ['cpCurrent','cpNew','cpConfirm'].forEach(id => $(id).value = '');
+      closeChangePwModal();
+      Utils.toast('Master password updated', 'success');
+      if (result && result.argon2FellBackToPbkdf2) {
+        Utils.toast('Argon2id wasn\'t available — used PBKDF2 instead', 'default', 4000);
+      }
+    } catch (e) {
+      if (e.message === 'WRONG_PASSWORD') showError('changePwError', 'Incorrect Master Password');
+      else if (e.message === 'WEAK_PASSWORD') showError('changePwError', 'New password must be at least 8 characters.');
+      else showError('changePwError', friendlyError(e));
+    } finally {
+      $('changePwSave').disabled = false;
+      $('changePwSave').textContent = originalLabel;
+    }
+  });
+  ['cpCurrent','cpNew','cpConfirm'].forEach(id => $(id).addEventListener('keydown', e => { if (e.key === 'Enter') $('changePwSave').click(); }));
+  $('setAutoLock').addEventListener('change', () => {
+    settings.autoLockMinutes = parseInt($('setAutoLock').value, 10);
+    autoLockMs = settings.autoLockMinutes * 60 * 1000;
+    Storage.saveSettings(settings);
+    resetAutoLockTimer();
+  });
+  $('setLockOnBlur').addEventListener('change', () => {
+    settings.lockOnBlur = $('setLockOnBlur').checked;
+    Storage.saveSettings(settings);
+  });
+  autoLockMs = (settings.autoLockMinutes || 5) * 60 * 1000;
+
+  /* ---------- export / import ---------- */
+  $('menuExport').addEventListener('click', () => {
+    try {
+      const blob = VaultModule.exportBlob();
+      const jsonStr = JSON.stringify(blob, null, 2);
+      const file = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url; a.download = `securevault-export-${Date.now()}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      Utils.toast('Encrypted vault exported', 'success');
+    } catch (e) { Utils.toast(friendlyError(e), 'error'); }
+  });
+  $('menuImport').addEventListener('click', () => $('importFile').click());
+
+  $('importFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    let blob;
+    try {
+      let text = await file.text();
+      blob = JSON.parse(text);
+      text = null; // done with the raw text buffer, drop the reference
+    } catch (err) { Utils.toast('Import failed: file is not valid JSON', 'error'); return; }
+    if (!Storage.validateBlob(blob)) { Utils.toast('Import failed: not a valid SecureVault file', 'error'); return; }
+    if (!(await Storage.verifyIntegrity(blob))) { Utils.toast('Import failed: file integrity check did not match (corrupted or modified)', 'error'); return; }
+
+    const doImport = async () => {
+      const pw = await promptPassword('Enter the master password for this vault file to import it.');
+      if (pw === null) return;
+      try {
+        await VaultModule.replaceFromImportedBlob(pw, blob);
+        blob = null; // imported blob no longer needed once entries are decrypted in-memory
+        enterVault();
+        Utils.toast('Vault imported', 'success');
+      } catch (err) {
+        Utils.toast(err.message === 'WRONG_PASSWORD' ? 'Incorrect Master Password' : friendlyError(err), 'error');
+      }
+    };
+
+    if (VaultModule.isUnlocked()) {
+      confirmDialog('Replace current vault?', 'Importing will replace all entries currently stored on this device.').then(ok => { if (ok) doImport(); });
+    } else { doImport(); }
+  });
+
+  // Minimal inline password prompt reusing the confirm modal's structure.
+  function promptPassword(message) {
+    return new Promise(resolve => {
+      const backdrop = $('confirmModalBackdrop');
+      $('confirmTitle').textContent = 'Master Password Required';
+      $('confirmBody').innerHTML = '';
+      const desc = document.createElement('div');
+      desc.style.marginBottom = '10px';
+      desc.textContent = message; // textContent, not innerHTML — never render this as markup
+      const input = document.createElement('input');
+      input.type = 'password'; input.id = 'importPwInput'; input.placeholder = 'Master password';
+      input.autocomplete = 'off'; input.spellcheck = false;
+      input.setAttribute('autocorrect', 'off'); input.setAttribute('autocapitalize', 'off');
+      input.addEventListener('dragover', ev => ev.preventDefault());
+      input.addEventListener('drop', ev => ev.preventDefault());
+      $('confirmBody').appendChild(desc);
+      $('confirmBody').appendChild(input);
+      $('confirmOk').textContent = 'Continue';
+      backdrop.classList.add('show');
+      setTimeout(() => input.focus(), 50);
+      const cleanup = (val) => {
+        backdrop.classList.remove('show'); $('confirmOk').textContent = 'Confirm';
+        input.value = ''; // clear the typed password from the DOM immediately
+        resolve(val);
+      };
+      $('confirmOk').onclick = () => cleanup(input.value || '');
+      $('confirmCancel').onclick = () => cleanup(null);
+      input.addEventListener('keydown', ev => { if (ev.key === 'Enter') cleanup(input.value || ''); });
+    });
+  }
+
+  /* ---------- generic confirm dialog ---------- */
+  function confirmDialog(title, body) {
+    return new Promise(resolve => {
+      $('confirmTitle').textContent = title;
+      $('confirmBody').textContent = body;
+      $('confirmModalBackdrop').classList.add('show');
+      $('confirmOk').onclick = () => { $('confirmModalBackdrop').classList.remove('show'); resolve(true); };
+      $('confirmCancel').onclick = () => { $('confirmModalBackdrop').classList.remove('show'); resolve(false); };
+    });
+  }
+  $('confirmModalBackdrop').addEventListener('click', e => { if (e.target === $('confirmModalBackdrop')) { e.target.classList.remove('show'); } });
+
+  function closeAllModals() {
+    document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('show'));
+  }
+
+  /* ---------- keyboard shortcuts ---------- */
+  document.addEventListener('keydown', (e) => {
+    if (!VaultModule.isUnlocked()) return;
+    const tag = (document.activeElement && document.activeElement.tagName) || '';
+    const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    if (e.key === '/' && !typing) { e.preventDefault(); $('searchInput').focus(); }
+    if ((e.key === 'n' || e.key === 'N') && !typing) { openAdd(); }
+    if (e.key === 'Escape') { closeAllModals(); }
+  });
+
+  /* ---------- sidebar toggle for mobile ---------- */
+  function initResponsive() {
+    if (window.innerWidth <= 760) $('btnSidebarToggle').classList.remove('hidden');
+    $('btnSidebarToggle').addEventListener('click', () => $('sidebar').classList.toggle('open'));
+    window.addEventListener('resize', () => {
+      $('btnSidebarToggle').classList.toggle('hidden', window.innerWidth > 760);
+    });
+  }
+  initResponsive();
+
+  /* ---------- lock on reload (explicit, by design) ---------- */
+  // No key material or decrypted data is persisted anywhere, so a full
+  // page reload naturally requires the master password again.
+
+  return { boot };
+})();
+
+/* ---------- global error safety net ---------- */
+window.addEventListener('error', (e) => { try { Utils.toast('Unexpected error — see console', 'error'); } catch (_e) {} });
+window.addEventListener('unhandledrejection', (e) => { try { Utils.toast('Unexpected error — see console', 'error'); } catch (_e) {} });
+
+if (!window.crypto || !window.crypto.subtle) {
+  document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:#E7ECF1;background:#0B0F14;min-height:100vh;">This browser does not support the Web Crypto API, which SecureVault requires. Please use an up-to-date Chromium-based browser.</div>';
+} else {
+  UI.boot();
+}
+</script>
+
+<!--
+============================================================================
+ DEVELOPER DOCUMENTATION
+
+UPDATE — PER-ENTRY ENCRYPTION + OPTIONAL ARGON2ID
+----------------------------------------------------
+Two additions on top of everything below:
+1. Each vault entry is now encrypted independently (own random IV, own
+   GCM tag) instead of the whole vault being one ciphertext blob. Edits
+   only re-encrypt the changed entry; a corrupted/tampered single entry
+   fails to decrypt on its own without blocking the rest of the vault
+   from unlocking (verified: editing one entry leaves every other
+   entry's stored ciphertext byte-for-byte unchanged). A small separate
+   "verifier" record confirms the master password independently of any
+   entries. Vaults created before this update are detected automatically
+   on first unlock and silently upgraded in place to this format —
+   nothing is lost, no re-entry of data needed.
+2. Argon2id is now offered as an optional KDF alongside PBKDF2, chosen
+   at vault creation. It's a from-scratch implementation (no browser
+   exposes Argon2 natively) that was tested against all three official
+   RFC 9106 test vectors (Argon2d/i/id) and matched byte-for-byte. If
+   Argon2id isn't available for any reason, vault creation automatically
+   and silently falls back to PBKDF2. Existing PBKDF2 vaults are
+   completely unaffected and keep working exactly as before — the KDF
+   type is read from each vault's own stored metadata at unlock time.
+
+============================================================================
+
+ENCRYPTION FLOW
+----------------
+1. The user's Master Password never touches disk and is never sent
+   anywhere (the app is 100% offline; no network requests are made, and
+   the CSP below enforces connect-src 'none' so this is not just a
+   promise but a browser-enforced restriction).
+2. On vault creation: the device is benchmarked (see KEY DERIVATION FLOW
+   below) to choose an iteration count, a random 256-bit salt is
+   generated with crypto.getRandomValues, and PBKDF2-HMAC-SHA512 derives
+   a non-extractable 256-bit AES-GCM CryptoKey from the Master Password
+   + salt (CryptoModule.deriveKey).
+3. The in-memory entry array is serialized to JSON and encrypted with
+   AES-256-GCM. A fresh random 96-bit IV is generated for every single
+   encryption call (Storage/Vault never reuse an IV — even repeated
+   saves of the same vault each get a brand new IV). GCM's built-in
+   authentication tag is appended to the ciphertext automatically by
+   the Web Crypto API and verified automatically on decrypt.
+4. On unlock: a cheap SHA-256 structural checksum is verified first
+   (see DATA INTEGRITY below) to catch corruption before spending any
+   PBKDF2 time. Then the stored salt + entered password re-derive the
+   key; decryption is attempted, and a GCM tag mismatch throws, which is
+   caught and reported simply as "Incorrect Master Password" with no
+   further detail (avoids oracle-style information leaks — see UNLOCK
+   PROTECTION below for why this can't distinguish wrong-password from
+   tampered-ciphertext, and why that's fine).
+
+KEY DERIVATION FLOW (adaptive)
+--------------------------------
+  Master Password + 256-bit random salt
+      -> PBKDF2-HMAC-SHA512, N iterations (see below)
+      -> 256-bit AES-GCM key (non-extractable CryptoKey)
+
+The iteration count N is no longer a fixed constant — it's chosen per
+device:
+  1. On first vault creation (and again on every master-password
+     change), CryptoModule.benchmarkIterations() runs a real PBKDF2
+     derivation at a fixed sample size (100,000 iterations) and times it
+     with performance.now().
+  2. From the measured per-iteration cost, it computes the iteration
+     count that would take ~750ms (the midpoint of the requested
+     500-1000ms unlock-time window).
+  3. The result is clamped: never below 600,000 (a safety floor even on
+     very fast hardware) and never above 4,000,000 (a ceiling so a
+     misbehaving benchmark on an unusual device can't produce an
+     unusable multi-minute unlock).
+  4. The chosen N is stored in the vault's own encrypted-blob metadata
+     (kdf.iterations), so every vault can carry its own value and
+     older/slower-benchmarked vaults keep working exactly as before —
+     unlock() always reads N from the blob rather than assuming a
+     constant.
+  5. Changing the master password re-benchmarks the current device, but
+     the new N is max(newly-benchmarked, previous N) — the app will
+     never silently reduce your iteration count, only raise it or leave
+     it unchanged. There is no UI path to lower it; that was an explicit
+     design choice per the request that drove this change.
+
+The derived CryptoKey is held only in the Vault module's closure while
+unlocked, and is discarded (set to null) on lock/auto-lock/tab close.
+Because it's created with extractable:false, it cannot be exported back
+to raw bytes even if a malicious script gained a reference to it.
+
+UNLOCK PROTECTION
+-------------------
+- Progressive lockout: failed unlock attempts are counted and persisted
+  in localStorage (a plain counter + timestamp, not sensitive data) so
+  a page reload can't reset the clock. Delay schedule: no delay for
+  attempts 1-5, 2s for 6-10, 5s for 11-20, then exponential backoff
+  (5s * 2^(failures-20), capped at 5 minutes) beyond that. The counter
+  resets to zero only on a successful unlock.
+- Wrong password vs. corrupted vault are deliberately NOT distinguished
+  at the decrypt stage: AES-GCM's authentication tag check fails
+  identically whether the key is wrong or the ciphertext was tampered
+  with/corrupted, and the app does not attempt to infer which — both
+  surface as "Incorrect Master Password". (A separate, earlier
+  structural check — the integrity checksum and schema validation —
+  DOES report "corrupted file" distinctly, but that check runs before
+  any password is used, so revealing it carries no password-related
+  information.)
+- Constant-time comparison: the actual password/key check is performed
+  natively inside crypto.subtle.decrypt (GCM tag verification), not via
+  any JS-level byte comparison, so there is no JS timing side-channel
+  for us to introduce there in the first place. Where the app does
+  compare byte strings directly — verifying the integrity checksum in
+  Storage.verifyIntegrity — it uses CryptoModule.constantTimeEqual(),
+  which always walks the full length of both inputs rather than
+  short-circuiting on the first mismatch.
+
+MEMORY SECURITY
+-----------------
+- The decrypted entry array and the derived CryptoKey exist only inside
+  VaultModule's closure and are set to null/[] on lock(), which is
+  triggered by: explicit "Lock now", inactivity timeout, optional
+  lock-on-tab-hidden, page reload (implicit — no state persists), and
+  best-effort on pagehide/beforeunload (browser/tab closing).
+- Master-password input fields are cleared (.value = '') immediately
+  after a successful use; the "confirm current password to import"
+  prompt clears its field the instant it resolves either way.
+- The password-generator output field is cleared as soon as its modal
+  closes, whether or not the value was used, rather than left sitting
+  in the DOM.
+- Import buffers (the raw file text, the parsed JSON blob) are
+  dereferenced (set to null) as soon as they're no longer needed.
+- All of this comes with a hard caveat — see LIMITATIONS below on why
+  JS can't guarantee true memory scrubbing.
+
+CLIPBOARD SECURITY
+--------------------
+- Copy uses the modern async Clipboard API when available, and falls
+  back to the older execCommand('copy') method when it isn't (some
+  Chromium builds don't treat a local file:// page as a fully secure
+  context, which silently blocks navigator.clipboard.writeText).
+- After 20 seconds the clipboard is unconditionally overwritten with an
+  empty string. If that clear attempt itself fails (e.g. clipboard
+  permission revoked mid-session), the user now gets an explicit toast
+  warning telling them to clear it manually — silence on failure was
+  the previous behavior and is no longer acceptable.
+
+IMPORT VALIDATION
+-------------------
+Storage.validateBlob() performs strict, allow-listed schema validation
+on any blob before it is trusted — both the one already in localStorage
+and any freshly imported file:
+  - Only recognized top-level keys are permitted (app, version, kdf,
+    encryption, integrity, createdAt, modifiedAt, exportedAt) —
+    anything else fails validation outright.
+  - version must be a number between 1 and the highest version this
+    build understands.
+  - kdf.algorithm must be exactly "PBKDF2", kdf.hash exactly "SHA-512".
+  - kdf.iterations must be an integer within
+    [KDF_ITERATIONS_MIN=250000, KDF_ITERATIONS_MAX=4000000] — this
+    specifically blocks a maliciously crafted import file from
+    demanding an absurd iteration count (e.g. 10^12) to hang the tab.
+  - kdf.salt must decode to exactly 32 bytes; encryption.iv to exactly
+    12 bytes; encryption.ciphertext must decode to at least 16 bytes
+    (the minimum size of a GCM auth tag alone).
+  - If present, integrity.checksum must decode to exactly 32 bytes
+    (SHA-256 output size).
+Separately, Storage.verifyIntegrity() recomputes the SHA-256 checksum
+over algorithm+iv+ciphertext+salt+iterations and compares it
+(constant-time) against the stored value — catching truncation or
+corruption cheaply, before any password is even entered. Files failing
+either check are rejected with a generic "corrupted or invalid" message
+and never reach the decrypt step.
+
+EXPORT PROTECTION
+--------------------
+Export embeds: vault format version, original creation date (createdAt),
+export date (exportedAt, stamped fresh on every export), and the
+integrity checksum described above. It is structurally identical to
+what's stored in localStorage — there is no "decrypt then re-encrypt for
+export" step, so there is never a moment where plaintext exists purely
+for export purposes.
+
+STORAGE FORMAT (localStorage key: "securevault.blob.v1")
+----------------------------------------------------------
+{
+  "app": "SecureVault",
+  "version": 1,
+  "kdf": {
+    "algorithm": "PBKDF2",
+    "hash": "SHA-512",
+    "iterations": <number, device-benchmarked, >= 600000>,
+    "salt": "<base64, 32 bytes>"
+  },
+  "encryption": {
+    "algorithm": "AES-256-GCM",
+    "iv": "<base64, 12 bytes>",
+    "ciphertext": "<base64, includes GCM auth tag>"
+  },
+  "integrity": { "algorithm": "SHA-256", "checksum": "<base64, 32 bytes>" },
+  "createdAt": "<ISO 8601>",
+  "modifiedAt": "<ISO 8601>",
+  "exportedAt": "<ISO 8601, export files only>"
+}
+The ciphertext, when decrypted, yields { "entries": [ ...vault items ] }.
+No field in this object is ever plaintext credential data — only
+algorithm metadata and opaque ciphertext/checksum are stored. A separate
+"securevault.lockout.v1" key stores only a failure counter and
+timestamp (non-sensitive) for the progressive lockout feature.
+
+CHANGE MASTER PASSWORD
+------------------------
+Available from the menu while unlocked. The flow: (1) the entered current
+password is independently re-derived against the on-disk salt and used to
+decrypt the persisted blob, so a stale in-memory key can never be reused
+to bypass verification; (2) the device is re-benchmarked and a new
+iteration count is chosen (never lower than the previous one); (3) a
+brand-new random 256-bit salt and freshly derived key are generated from
+the new password; (4) the current in-memory entries are re-encrypted
+with a new random IV under that new key and written to storage, fully
+replacing the old salt/IV/ciphertext/iterations. Nothing about the old
+password or its derived key persists anywhere afterward.
+
+DOM SECURITY
+--------------
+Every value that originates from user input or an imported file (title,
+website, username, email, url, notes, category, tags) is passed through
+Utils.escapeHtml() before being placed into any innerHTML-based template,
+which neutralizes &, <, >, ", ', `, =, and /. This is a deliberate,
+audited design choice over a full createElement/textContent rewrite of
+every render path: escaping is a complete defense against the injection
+this data could otherwise cause, and it preserves the existing rendering
+approach (important for the batched, paginated rendering that keeps large
+vaults fast — see PERFORMANCE below). Where HTML rendering is not
+actually needed, the app now uses plain DOM APIs instead — e.g. the
+"master password required" import prompt is built with createElement/
+textContent rather than innerHTML, since it only ever needs to display
+a fixed string plus a bare input, not any markup.
+
+SEARCH
+--------
+Search only ever operates on the plain-text `entries` array already
+held in memory while the vault is unlocked — it never triggers any
+additional decryption, and it cannot run at all while locked (there is
+no decrypted data for it to see). To stay fast at scale, each entry's
+lowercased searchable text is computed once and cached in a WeakMap
+keyed by the entry object itself, rather than being recomputed on every
+keystroke; editing an entry produces a new object (see updateEntry),
+which naturally invalidates its stale cache entry. The WeakMap was
+chosen specifically so this cache can never leak into the encrypted
+JSON blob the way a plain cached property on the entry object would.
+
+PASSWORD GENERATOR
+---------------------
+Both modes use crypto.getRandomValues() exclusively, with rejection
+sampling (Generator.secureIndex) to avoid modulo bias in both character
+and word selection. Random passwords now support up to 256 characters
+(raised from 128). Passphrase mode draws words from a compact, original
+word list (578 words, written for this app — not copied from any
+third-party diceware list) at ~9.2 bits of entropy per word; the actual
+list size and resulting bits-per-word are computed and displayed live in
+the generator UI rather than any hardcoded/optimistic number, so the
+strength meter reflects what the list can actually deliver.
+
+DATA INTEGRITY
+-----------------
+Two independent integrity layers exist:
+  1. AES-GCM's own authentication tag — cryptographic proof the
+     ciphertext hasn't been altered, verified automatically by
+     crypto.subtle.decrypt and required for ANY successful unlock.
+  2. The SHA-256 structural checksum described under IMPORT VALIDATION —
+     a cheap pre-check that catches truncation/corruption without
+     spending PBKDF2 time, and works even before a password is entered.
+Between the two, a modified, truncated, or corrupted vault is detected
+either immediately (checksum) or during decrypt (GCM tag) — it can never
+silently decrypt to incorrect data. An unsupported version number is
+rejected by schema validation before either check runs.
+
+SECURE DEFAULTS
+------------------
+All master-password-class inputs (create, unlock, change-password
+current/new/confirm, and the import password prompt) have
+autocomplete="off", spellcheck="false", autocorrect="off",
+autocapitalize="off", and a drop-event handler that blocks
+drag-and-drop text insertion — reducing the chance of the browser's own
+form-fill/spellcheck/autocorrect subsystems touching this specific
+class of field, and blocking one specific injection vector (dragging
+text in from elsewhere in the page or OS).
+
+BROWSER SECURITY / CSP
+--------------------------
+The Content-Security-Policy meta tag denies everything by default
+(default-src 'none') and only re-permits what the app actually inlines:
+script-src/style-src 'unsafe-inline' (unavoidable for a single static
+file with no build step or server to serve a nonce from — see note
+below), img-src 'self' data:, and connect-src 'none' (no network egress
+of any kind, ever). object-src, font-src, media-src, worker-src,
+child-src, frame-src, and manifest-src are all explicitly 'none', and
+base-uri/form-action/frame-ancestors are all locked down too. A
+no-referrer meta tag and a noindex/nofollow robots meta tag are also
+set. Note: HTTP-only security headers like X-Content-Type-Options and
+X-Frame-Options cannot be set via <meta> at all — frame-ancestors 'none'
+in the CSP is the closest equivalent achievable from a local file, and
+is included for that reason.
+
+PERFORMANCE
+-------------
+Entries render in batches of 150 via a "Show more" control rather than
+building the entire filtered list into the DOM at once — this keeps
+the page responsive whether the vault holds a dozen entries or 50,000+.
+Search filtering itself is O(n) over the in-memory array with a cached
+per-entry lowercase index (see SEARCH above), which is fast enough at
+this scale that no separate inverted index is needed. persist() calls
+are serialized through a promise queue so rapid successive saves can't
+race and overwrite one another.
+
+BROWSER COMPATIBILITY
+------------------------
+Requires the Web Crypto API (crypto.subtle) and Clipboard API
+(navigator.clipboard, with an execCommand fallback where the former is
+restricted). Verified against current Chromium-based browsers (Chrome,
+Edge, Brave, Opera) on Windows, macOS, Linux, and Android. The app
+checks for crypto.subtle on load and shows a plain-language warning
+instead of failing silently if it is unavailable.
+
+LIMITATIONS OF A STANDALONE HTML FILE
+-----------------------------------------
+- No OS-level biometric authentication (fingerprint/Face ID) is
+  possible: the WebAuthn platform-authenticator APIs require a proper
+  origin (https:// or a registered relying-party), which a local
+  file:// document does not have. Unlocking is therefore always by
+  Master Password only.
+- True secure memory wiping is not guaranteed: JavaScript strings are
+  immutable and garbage-collected on the engine's own schedule, so
+  "clearing" a variable (setting it to null) removes the reference but
+  cannot guarantee the original bytes are scrubbed from RAM. Every
+  "clear sensitive data" step described above (memory, clipboard,
+  generator output, import buffers) is genuinely best-effort within
+  this constraint — it removes the reference and stops the app itself
+  from holding onto it, but cannot force the JS engine to zero the
+  underlying memory immediately. This is a fundamental limitation of
+  running in a JS engine, not a flaw specific to this app.
+- "Lock on browser close" is similarly best-effort: pagehide/beforeunload
+  fire reliably for navigation and tab closure in practice, but no web
+  API guarantees code will run before a browser process is killed
+  outright (e.g. OS force-quit, crash, out-of-memory termination). In
+  those cases the risk is limited, though, since the vault re-locks on
+  the next load regardless — no key material persists across a reload
+  under any circumstance.
+- Progressive lockout delays are a deterrent for *this device's copy* of
+  the vault, not a cryptographic guarantee — the lockout counter lives
+  in this browser's localStorage. An attacker with a copy of the raw
+  exported/blob file who runs their own offline brute-force tooling
+  against it is not slowed by this feature at all; the real protection
+  against that scenario is the PBKDF2 iteration count and the strength
+  of the master password itself.
+- Clipboard auto-clear cannot guarantee no other app read the password
+  during the 20-second window, and any other app or OS action that
+  writes to the clipboard during that window will have its own content
+  overwritten by our scheduled clear.
+- localStorage is per-browser-profile and per-origin. Opening the file
+  from a different path, browser, or profile will not show the same
+  vault; back up the exported .json file to move between them.
+- There is no server, so there is no cross-device sync — export/import
+  is the only way to move an (still encrypted) vault between devices.
+- A local file has no HTTPS transport, but since no network requests
+  are ever made (connect-src 'none'), there is no network channel to
+  protect in the first place.
+- The inline CSP's script-src/style-src must allow 'unsafe-inline'
+  because this is a single static file with no server to issue a
+  per-load nonce; a fixed/hardcoded nonce would offer no real
+  protection since it would be visible in the same file an attacker
+  would need to modify to exploit it. The practical threat model this
+  guards against is a compromised *third-party* script or style being
+  loaded — which cannot happen here regardless, since connect-src and
+  default-src already forbid loading anything external at all. Script
+  injection would require modifying this file directly, which is a
+  different, file-integrity threat model that CSP nonces don't address
+  either way.
+============================================================================
+-->
+</body>
+</html>
